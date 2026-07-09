@@ -177,6 +177,8 @@ Promote every hardcoded `<p>`, heading, link, image, count, choice into `section
 
 → See `./data-to-settings.md`.
 
+> **When a promoted `<p>` becomes a `richtext` field, render it inside a `<div>` — not the original `<p>`.** `richtext` outputs its own `<p>`, so keeping the design's `<p>` wrapper yields invalid `<p><p>…</p></p>` (the browser auto-closes the outer `<p>`, detaching the class and breaking the layout — schema validation won't catch it). Swap `<p class="…">` → `<div class="… rte">`. For an `inline_richtext` field the original `<p>`/heading wrapper is fine. See `liquid` skill `references/gotchas.md` #32.
+
 ### 5. Repeating children → blocks
 
 When the design renders N similar items via repeated `<xo-component>`s, convert to:
