@@ -296,6 +296,8 @@ Any Liquid tag that **outputs a `richtext` or `inline_richtext` schema field** m
 
 The styling already ships globally — `.rte { … }` in `src/styles/base/content.scss` (heading/paragraph/list spacing) and `src/snippets/_base/text/text.global.scss` exempts `.rte` from font-size normalization. The class is what tells the cascade "this is editor-authored rich text", so the spacing rules apply. Omitting it leaves richtext rendering unstyled. Applies to both `section.settings.*` and `block.settings.*`; plain `text`/`url`/`image` settings do NOT get `rte`.
 
+**Wrapper element for a `richtext` field must be `<div>` — never `<p>` (nor a bare `<h1>-<h6>`).** A `richtext` field already outputs its own block-level tags (`<p>`, `<ul>`, `<h1>-<h6>`), so wrapping it in a `<p>` produces `<p><p>…</p></p>` — invalid nesting the browser silently auto-closes, detaching the class/styling from the content and breaking layout. This bites during ports: the design element is often a `<p class="lead">…`, and the reflex is to keep the `<p>` and just add `rte` — don't; swap it to `<div class="… rte">`. The `<h2>` in the example above is only safe because `heading` is an **`inline_richtext`** field (inline tags only, no block wrapper) — for `inline_richtext` a `<p>`/`<h2>` wrapper is fine. Rule of thumb: `richtext` → `<div>`; `inline_richtext` → any element. See `liquid` skill `references/gotchas.md`.
+
 ## End of session
 
 Append one entry to `.agent-state/PROGRESS.md` at the TOP of the file (under the title). See `planner` skill's `progress-protocol.md` for the entry template (Goal / Done / Decisions / Files touched / Open / next session).
