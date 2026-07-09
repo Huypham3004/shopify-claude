@@ -83,6 +83,8 @@ For paragraphs/lists: `type: 'richtext'` whose default's top-level node MUST be 
 
 Validation: `python .claude/skills/design-to-liquid/scripts/validate-schema.py src/sections/<name>/` catches these.
 
+> The rule above is about the DEFAULT VALUE (schema side). For the WRAPPER ELEMENT that outputs a `richtext` field (Liquid side), see #32.
+
 ---
 
 ## 5. `settings_data.json` `current` must be an object, not a string
@@ -507,6 +509,33 @@ Two correct forms:
 ```
 
 Reach for **B** by default — when a condition is checked once, an intermediate boolean is just noise. Use **A** only when the same boolean gates several places (e.g. multiple blocks) and recomputing the comparison inline each time would be harder to read. This bites most inside the `{% liquid %}` prelude, where `has_x` flags sit next to real assigns and the value-vs-condition distinction is easy to forget — keep prelude assigns to values + filters, and move every comparison into an `if`.
+
+---
+
+## 32. `richtext` output wrapper must be `<div>`, never `<p>`
+
+A `richtext` field outputs its own block-level tags (`<p>`, `<ul>`, `<h1>`-`<h6>`). So the element you wrap the output in must be one that can legally hold block-level children — a `<div>` — **not** a `<p>` (nor a bare `<h2>`).
+
+```liquid
+{# WRONG — richtext emits <p>, so this renders <p><p>…</p></p> #}
+<p class="xo-x__text rte">{{ section.settings.body }}</p>
+
+{# RIGHT #}
+<div class="xo-x__text rte">{{ section.settings.body }}</div>
+```
+
+`<p>` cannot contain a block-level child, so the HTML parser auto-closes the outer `<p>` the instant it sees the inner `<p>` — the BEM class detaches from the content, spacing collapses, and the layout breaks silently. Schema validation can't catch it: the schema is valid and the Liquid compiles; only the rendered DOM is wrong.
+
+This bites during ports: the design element is frequently `<p class="lead">…</p>`, and the reflex is to keep the `<p>` and just add the `rte` class. Don't — swap the wrapper to `<div>`.
+
+Contrast with `inline_richtext` (#4): it emits inline tags only (no block wrapper), so a `<p>`/`<h2>` wrapper around an `inline_richtext` field is correct.
+
+| Field type | Wrapper element |
+| --- | --- |
+| `richtext` | `<div>` only |
+| `inline_richtext` | any — `<p>`, `<h1>`-`<h6>`, `<span>`, … |
+
+Both field types' wrappers also carry the `rte` class — see AGENT.md § "rte wrapper class on richtext output".
 
 ---
 
