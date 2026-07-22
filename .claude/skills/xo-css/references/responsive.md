@@ -91,7 +91,7 @@ Syntax: `@+breakpoint` = max-width.
 </h1>
 
 <!-- Body slightly larger on desktop -->
-<p class="fz:body fz:body-lg@md">
+<p class="fz:1.4rem fz:1.6rem@md">
   Responsive text
 </p>
 ```

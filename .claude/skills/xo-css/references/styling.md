@@ -76,11 +76,13 @@ Common tokens (full list in `theme-config/theme.config.json`):
 ```html
 <div class="fz:h1">Heading 1 size</div>
 <div class="fz:h2">Heading 2 size</div>
-<div class="fz:body">Body size</div>
-<div class="fz:small">Small size</div>
+<div class="fz:1.4rem">Body size</div>
+<div class="fz:1.2rem">Small size</div>
 ```
 
 `fz` = `font-size`
+
+> Body/small font-sizes are **direct rem** (`fz:1.4rem`) — the `bodySizes` token map was removed. Only heading sizes are tokens: `fz:h1`–`fz:h6` / `fz:d1`–`fz:d4`.
 
 ### Font family
 
@@ -174,17 +176,17 @@ Common tokens (full list in `theme-config/theme.config.json`):
 </h2>
 
 <!-- Body text -->
-<p class="fz:body ff:body fw:400 lh:1.4 c:foreground">
+<p class="fz:1.4rem ff:body fw:400 lh:1.4 c:foreground">
   Body text with comfortable readability
 </p>
 
 <!-- Small text -->
-<small class="fz:small c:foreground.7">
+<small class="fz:1.2rem c:foreground.7">
   Helper text
 </small>
 
 <!-- Uppercase label -->
-<span class="fz:small tt:uppercase lts:0.1rem fw:600">
+<span class="fz:1.2rem tt:uppercase lts:0.1rem fw:600">
   Label
 </span>
 ```

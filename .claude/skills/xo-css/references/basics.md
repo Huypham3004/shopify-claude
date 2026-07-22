@@ -218,21 +218,23 @@ You can use these without defining tokens:
 <div class="c:primary|h">
 ```
 
-### 5. Misusing `|` as a value separator
+### 5. `|` is the pseudo separator — use `_` for spaces in a value
 
-The `|` character is **the pseudo-class separator**, never a multi-value separator. Anything after `|` is parsed as a pseudo shortcut (see `./pseudo.md`); if it doesn't match, the class fails silently.
+The `|` character is **the pseudo-class separator**, never a value separator. Anything after `|` is parsed as a pseudo shortcut (see `./pseudo.md`); if it doesn't match, the class fails silently. To put a **space inside a value** (multi-value grid, multi-arg function, box-shadow, transition list) use an **underscore `_`** — the framework replaces every `_` in the value with a space (see the core's `getValue`). So multi-value IS atomic.
 
 ```html
-<!-- ❌ — these all parse `|...` as a pseudo and fail -->
-<div class="fz:body|1.4">           <!-- "|1.4" parses as pseudo "1.4" → invalid -->
-<div class="gtc:1.4fr|1fr">         <!-- multi-value grid columns isn't atomic -->
-<div class="gtc:minmax(28rem,36rem)|1fr">  <!-- complex function value isn't atomic -->
+<!-- ❌ — `|...` is parsed as a pseudo and the rest is dropped -->
+<div class="gtc:1.4fr|1fr">           <!-- `|1fr` → pseudo "1fr" → dropped; use `_` -->
+<div class="fz:body|1.4">             <!-- `|1.4` → pseudo; also fz:body is not a token — use direct rem -->
 
-<!-- ✅ — single-value atomic + escape hatches -->
-<div class="fz:1.4rem">             <!-- direct rem value (body sizes are not tokenized) -->
-<div class="fz:1.4rem">             <!-- literal value (discouraged) -->
-<!-- For multi-value grid columns: move to SCSS sidecar OR drive via xo-grid attribute + xo-grid-block class + CSS vars -->
+<!-- ✅ — underscore `_` = space; multi-value IS atomic -->
+<div class="gtc:1.4fr_1fr">                    <!-- grid-template-columns: 1.4fr 1fr -->
+<div class="gtc:minmax(28rem,36rem)_1fr">      <!-- grid-template-columns: minmax(28rem,36rem) 1fr -->
+<div class="bxsh:0_2px_12px_rgba(0,0,0,0.18)"><!-- box-shadow: 0 2px 12px rgba(0,0,0,0.18) -->
+<div class="fz:1.4rem">                        <!-- single value: no separator needed -->
 ```
+
+> Very long / complex values (multi-stop gradients, long transition lists) MAY be kept in the `<name>.global.scss` sidecar for readability — that's a preference, not a limitation; they're all expressible atomically via `_`.
 
 ### 6. Duplicate property on the same element
 
@@ -305,16 +307,14 @@ These always land in SCSS even under "XO-CSS-first" strategy:
 1. **`@keyframes`** — no atomic equivalent.
 2. **Multi-target chained selectors** — `&:hover .child`, `.is-active .child`, `& > .x + .y`.
 3. **Pseudo-elements** — `::before`, `::after` with their own content/positioning.
-4. **Multi-value CSS properties:**
-   - `grid-template-columns: 1.4fr 1fr` → SCSS. Atomic `gtc:` accepts a single value only.
-   - `grid-template-columns: minmax(28rem, 36rem) 1fr` → SCSS (complex function value).
-   - `padding: 2rem 2.2rem` → can split into atomic `py:2rem px:2.4rem` (use direction shortcuts) OR keep in SCSS if neither half maps cleanly.
-   - `transition: transform 0.4s ease, box-shadow 0.3s ease` → SCSS (multi-prop comma list).
-   - `background: linear-gradient(180deg, …)` → SCSS (multi-stop gradient).
-   - `box-shadow: 0 2px 12px rgba(0,0,0,0.18)` → SCSS (4-value + rgba).
-5. **Function-based values** — `calc()`, `min()`, `max()`, `clamp()`, `minmax()` with arithmetic. A bare `var(--x)` is escape-hatch atomic OK; computation is SCSS.
-6. **SCSS framework function calls with arguments** — `color(foreground, 0.553)` where the opacity-suffix `c:foreground.55` rounding isn't precise enough. Note: most opacity cases ARE atomic via the `.<pct>` suffix.
-7. **Dynamic per-instance styles consuming CSS custom properties with computation** — `top: calc(var(--top) + 1rem)` etc.
+4. **SCSS framework function calls with arguments** — `color(foreground, 0.553)` where the opacity-suffix `c:foreground.55` rounding isn't precise enough. (Most opacity cases ARE atomic via the `.<pct>` suffix.)
+
+**NOT tier-3 — these ARE atomic (write internal spaces as `_`):**
+
+- **Multi-value CSS properties** — `grid-template-columns: 1.4fr 1fr` → `gtc:1.4fr_1fr`; `grid-template-columns: minmax(28rem,36rem) 1fr` → `gtc:minmax(28rem,36rem)_1fr`; `box-shadow: 0 2px 12px rgba(0,0,0,0.18)` → `bxsh:0_2px_12px_rgba(0,0,0,0.18)`; `transition: transform 0.4s, box-shadow 0.3s` → `trs:transform_0.4s,box-shadow_0.3s`; `background: linear-gradient(180deg,#a,#b)` → `bg:linear-gradient(180deg,#a,#b)`. (`padding: 2rem 2.2rem` → use direction shortcuts `py:2rem px:2.4rem`.)
+- **Function-based values** — `calc()` / `min()` / `max()` / `clamp()` / `minmax()` are expressible via `_` for their internal spaces, e.g. `top:calc(var(--top)_+_1rem)`. A bare `var(--x)` is escape-hatch atomic too.
+
+Keep any of these in the SCSS sidecar **only by preference** when the value is very long/complex and reads better there — not because it's impossible atomically.
 
 ### Font-size translation (common confusion)
 
