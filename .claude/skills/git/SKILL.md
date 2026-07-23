@@ -1,6 +1,6 @@
 ---
 name: git
-description: Scoped commit workflow for this Shopify theme port. Scans dirty files, groups them by scope (skill / section / snippet / block / config / state / root), drafts a Conventional-Commit message in the project's style, runs light pre-commit gates, then commits ONE scope per invocation after user approval. Always surfaces a preview and asks before committing — never silent. NEVER pushes, amends, or bypasses hooks. Invoke whenever the user says "/git", "commit", "let's commit", "make a commit", "stage and commit", "tạo commit", or wants to checkpoint work before continuing.
+description: Scoped commit workflow for this Shopify theme port. Scans dirty files, groups them by scope (skill / section / snippet / block / config / state / root), drafts a Conventional-Commit message in the project's style, runs light pre-commit gates, then commits ONE scope per invocation after user approval. Always surfaces a preview and asks before committing — never silent. After committing it asks (via AskUserQuestion) whether to PUSH, commit the next scope, or stop. NEVER amends or bypasses hooks, and never pushes automatically — push runs only on your explicit choice in that prompt (never `--force`). Invoke whenever the user says "/git", "commit", "let's commit", "make a commit", "stage and commit", "tạo commit", or wants to checkpoint work before continuing.
 argument-hint: "[scope-fuzzy] | --all"
 ---
 
@@ -32,7 +32,7 @@ Commit captain for the base-3 Shopify theme port. One scope per commit. Surfaces
 - ✅ Always `AskUserQuestion` before staging or committing — surface, don't assume
 - ✅ Commit message follows the project's existing style — verify by reading recent `git log`
 - ✅ Always specific paths to `git add` — never `-A` / `.`
-- ❌ NEVER `git push` — **sole exception:** `/git design` mode may push the nested `design/` repo, and only after an explicit per-push confirmation (see "`/git design`" section). The parent theme repo is still never pushed.
+- ⚠️ **Push only on EXPLICIT user confirmation — never automatic, never silent.** After committing, the post-commit prompt (Step 11) offers **Push**; run `git push` only when the user picks it, after showing what will be pushed, and always plain `git push` — **never `--force` / `--force-with-lease`**. The `/git design` push step is the same gated confirmation. Never push without the user choosing it.
 - ❌ NEVER `git commit --amend` (always create a NEW commit)
 - ❌ NEVER `--no-verify` / `--no-gpg-sign` (no hook bypass)
 - ❌ NEVER auto-commit secret files (`.env`, `*.key`, `credentials*`, `*.pem`)
@@ -322,8 +322,6 @@ git status --porcelain | head -20
 Remaining dirty scopes:
   · .claude/planner (4 files)
   · agent-state (3 files)
-
-Run `/git` again or `/git --all` to continue. Run `git push` when ready.
 ```
 
 ### `--all` mode
@@ -337,11 +335,48 @@ Run `/git` again or `/git --all` to continue. Run `git push` when ready.
 
 Skipped: 0
 Remaining dirty: 0
-
-Run `git push` when ready.
 ```
 
-Always remind the user to `git push` manually — the skill never pushes.
+After the report, go to **Step 11** — don't dead-end and don't push silently.
+
+---
+
+## Step 11 — Post-commit: push / commit next / stop
+
+After the commit(s) land and the report is shown, **always** ask the user what to do next with a single `AskUserQuestion`. This is what replaces the old "run `/git` again / `git push` manually" dead-end.
+
+Build the options from state:
+
+```bash
+git status --porcelain          # any dirty scopes left?
+git status -sb | head -1        # "## main...origin/main [ahead N]" — how far ahead
+```
+
+`AskUserQuestion` (single-select), options in this order:
+
+- **Commit tiếp / Commit next** — *include ONLY if dirty scopes remain.* → return to **Step 3** (re-scan, pick the next scope(s)).
+- **Push** → the push flow below.
+- **Dừng / Stop** → end. If the branch is ahead of upstream, remind: "N commit chưa push — chạy `git push` khi sẵn sàng."
+
+Localise the labels to the user's language (per AGENT.md). Lead with the most likely next action: if scopes remain, "Commit next" first; if the tree is clean but ahead of upstream, "Push" first.
+
+### Push flow (only when the user picks "Push")
+
+Push is gated behind this explicit choice — never automatic (see Hard rules).
+
+1. **Show what will be pushed** before doing anything:
+   ```bash
+   git status -sb | head -1                 # branch + ahead/behind
+   git log --oneline @{u}..HEAD             # the exact commits that will go up
+   ```
+   If there's nothing ahead → tell the user "already up to date, nothing to push" and stop.
+2. **Confirm the target** (branch → `origin/<branch>`). If the branch has **no upstream** (`@{u}` fails), don't guess — surface it and ask whether to `git push -u origin <branch>` (set upstream) before running it.
+3. **Push** — plain, never forced:
+   ```bash
+   git push                                 # or: git push -u origin <branch> if no upstream (after asking)
+   ```
+   **Never `--force` / `--force-with-lease`.** If the push is rejected (non-fast-forward, remote ahead), STOP and surface the error — tell the user to reconcile (`git pull --rebase` / inspect) manually; do NOT force.
+4. After a successful push, report the range pushed (`<old>..<new>  <branch> -> <branch>`), then optionally re-ask Step 11 if scopes still remain (commit next) or end.
 
 ---
 
@@ -367,7 +402,7 @@ Entry pre-flight: confirm `design/.git` exists; if not, bail with "`design/` is 
 
 **Message style follows the DESIGN repo's own convention, not the parent's.** Verify with `git -C design log --oneline -10` (the same "match existing style" rule). Design uses `<type>: <summary>` with **no `(scope)` parenthesis** — name the area in the summary prose instead. E.g. `feat: button hover restyle + signature bump`, `chore: cascade blueprint copy edits`. Leak-check prefix is relative to the design repo root.
 
-**Push step (after the selected scopes are committed).** Push is allowed here but never automatic. Show how far ahead local is — `git -C design status -sb` (or `git -C design log --oneline @{u}..`) — then **ask**: "Push design repo to `origin/<branch>`?" Only on an explicit yes run `git -C design push` (never `--force`). If declined, remind the user they can `git -C design push` later. This is the one carve-out from the never-push rule, and it still always asks.
+**Push step (after the selected scopes are committed).** Push is allowed here but never automatic. Show how far ahead local is — `git -C design status -sb` (or `git -C design log --oneline @{u}..`) — then **ask**: "Push design repo to `origin/<branch>`?" Only on an explicit yes run `git -C design push` (never `--force`). If declined, remind the user they can `git -C design push` later. This follows the same gated-push rule as Step 11 — explicit ask, never automatic, never forced (just targeting `design/` instead of the parent repo).
 
 ---
 
@@ -380,6 +415,7 @@ Entry pre-flight: confirm `design/.git` exists; if not, bail with "`design/` is 
 5. ✅ Hook didn't get bypassed (no `--no-verify` in command history)
 6. ✅ Not an amend (commit hash is new vs. `HEAD~1`)
 7. ✅ Author = current git user (no AI co-author trailer)
+8. ✅ If a push happened — it was an explicit user "Push" choice, plain `git push` (no `--force`), and the pushed range was shown
 
 If any fails → surface to user, do NOT claim success.
 
@@ -416,5 +452,5 @@ If any fails → surface to user, do NOT claim success.
 
 - **One scope per commit** because port work spans many concerns (a single session may touch a section, two snippets, a preset, and the state docs). Mixing them in one commit makes `git log` and `git blame` useless for debugging "where did this regression come from?".
 - **Always preview + confirm** because the cost of asking is 2 seconds and the cost of an unintended commit is `git reset --soft HEAD~1` + reconciliation. Surface, don't assume.
-- **Never push** because pushing is a publishing act with consequences (CI, deployments, teammates pulling). That belongs to the user's judgment, not an automated workflow.
+- **Push only on an explicit choice** because pushing is a publishing act with consequences (CI, deployments, teammates pulling). The skill never pushes automatically — after committing it *offers* Push in the Step 11 prompt, shows exactly what would go up, and only pushes plain (never forced) when the user picks it. The judgment stays with the user; the skill just saves the extra step.
 - **Light gates over strict CI** because this is a development theme being actively iterated. Hard blocks on every stylistic issue would interrupt flow; warnings let the user decide.
