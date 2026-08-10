@@ -1,10 +1,16 @@
 # Theme Store Requirements — Porting Checklist
 
-Distilled from <https://shopify.dev/docs/storefronts/themes/store/requirements>.
+Distilled from the canonical source — **<https://shopify.dev/docs/storefronts/themes/store/requirements.md>** (Shopify serves a `.md` version of its docs for agents; that URL is the source of truth).
 
-This reference is **scoped to what matters while porting** (schemas, sections, snippets, copy). Submission-only items (theme name uniqueness, demo store, documentation/support contact form, Lighthouse benchmarks, browser matrix) are out of scope here — revisit those at submission time.
+This reference is **scoped to what matters while porting** (schemas, sections, snippets, copy). Submission-only items (theme name uniqueness, demo store, documentation/support contact form, Lighthouse benchmarks, browser matrix, the `.scss` ban, Skeleton-only codebase) are out of scope here — see §8, revisit at submission.
 
-The schema validator (`scripts/validate-schema.py`) enforces most of these as warnings. Use `--strict` to escalate warnings to errors for CI.
+The schema validator (`scripts/validate-schema.py`) enforces most of the label/terminology rules as warnings. Use `--strict` to escalate warnings to errors for CI.
+
+> [!NOTE]
+> **Reconcile protocol — don't fetch the live doc on every port.** This local file is the daily driver: offline, cheap, mapped to this project's conventions, and paired with the executable validator. The full live `.md` is large and **mostly submission-scope** (browser matrix, demo stores, support SLAs, naming rules…), so loading it into every port is noise. Instead:
+> - **Periodically reconcile** — `/system-upgrade` (or a "check theme store requirements" ask) fetches the live `.md`, diffs it against this file, and updates the distilled subset below.
+> - **Fetch the full live doc on demand ONLY at real submission-QA time**, when you need the complete required-features checklist (accelerated checkout, faceted filtering, `<shopify-account>`, Follow-on-Shop `login_button`, unit pricing, Shop Pay Installments, rich media, predictive search, etc.).
+> - _Last reconciled: 2026-08-10._
 
 ## 1. Setting labels — terminology rules
 
@@ -153,15 +159,13 @@ python .claude/skills/design-to-liquid/scripts/validate-schema.py --theme
 
 ## 8. Out of scope for porting (revisit at submission)
 
-- Theme name + preset name uniqueness audit (1–2 words, no industry/company names)
-- Lighthouse benchmark testing against the Shopify benchmark dataset
-- Browser/device compatibility QA
-- Demo store buildout + transfer
-- Documentation portal + support contact form
-- SEO metadata snippet + Google rich product snippets
-- Shop Pay / Pickup availability / Selling plans wiring
-- Faceted search facets
-- App block opt-ins on product/featured-product sections
-- Multi-language + multi-currency UX
+- Theme name + preset name uniqueness audit (1–2 words, < 30 chars, no industry/company names)
+- **Lighthouse benchmark testing** against the Shopify benchmark dataset — submission bar is **Performance ≥ 60 (avg)** and **Accessibility ≥ 90 (avg)** across Product/Collection/Home on desktop + mobile. (Our `/lighthouse-audit` skill uses a stricter aspirational 90+ across all four categories — see its `thresholds.md`.)
+- **No `.scss` at submission** — Shopify's rule: "must not use Sass, or include `.scss` / `.scss.liquid` files; native CSS only." This project authors `.global.scss` but the build pipeline (scss-glob + xo-css plugin) **compiles to `.css` in `shopify/`** before shipping, so the shipped output is compliant. At submission, verify `shopify/` contains no `.scss` / `.scss.liquid`.
+- **Approved codebase** — Shopify accepts only the **Skeleton Theme** as the Theme Store starting codebase (no themes derived from Dawn/Horizon). This project is custom source under `src/` compiled to `shopify/`, not derived — just record it at submission.
+- Browser/device compatibility QA · Demo store buildout + transfer · Documentation portal + support contact form (reply-within-2-business-days SLA)
+- SEO metadata snippet + Open Graph / Twitter card tags + Google rich product snippets
+- Theme-level required features: accelerated checkout buttons, faceted search filtering, `<shopify-account>` in header, Follow-on-Shop (`login_button`), Shop Pay Installments banner, Pickup availability, Selling plans, unit pricing, rich product media, predictive search, product recommendations, country/language selector
+- App block opt-ins on product/featured-product sections · Multi-language + multi-currency UX
 
-These are systemic features; checking them off requires holistic work after the section port is complete.
+These are systemic/submission-level features; checking them off requires holistic work after the section port is complete. When you reach submission QA, **fetch the live `.md`** (see the Reconcile protocol at the top) for the authoritative, current list — it evolves.
