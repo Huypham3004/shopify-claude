@@ -21,27 +21,33 @@ The `.claude/` agent sits in the middle: it reads the design, writes Liquid, val
 | Layer | Location | Role |
 |-------|----------|------|
 | **Project memory** | `.agent-state/` | Three markdown files: `PLAN.md` (priority queue ⚪🔵✅⏸❓), `PROGRESS.md` (append-only changelog, one entry per session), `INVENTORY.md` (coverage map, auto-generated). |
-| **Skill catalog** | `.claude/skills/<name>/` | 13 specialised skills — each is a folder with `SKILL.md` + `references/*.md` + `scripts/` if needed. |
+| **Skill catalog** | `.claude/skills/<name>/` | 19 specialised skills — each is a folder with `SKILL.md` + `references/*.md` + `scripts/` if needed. |
 | **External integrations** | `.mcp.json` | 3 MCP servers (`xo-components`, `playwright`, `xo-design`) + `context7` for docs lookup. |
 | **Guardrails** | `.claude/hooks/` + `settings.json` | `skill-reminder.cjs` — a `PreToolUse` hook that nudges the right skill by file path on every Edit/Write; `settings.json` pins the model, the skill plugins, and registers the hook. |
 
-### The 13 skills
+### The 19 skills
 
 | Skill | Answers | Triggered when |
 |-------|---------|----------------|
 | `planner` | **WHAT + STATUS** — what's next, where we are | Start of every session, or when asked "what's next" |
 | `design-to-liquid` | **HOW** — port one section (Step 0 tokens → Step 6 restyle) | User picks a section in xo-design or calls `/design-to-liquid` |
+| `figma-to-liquid` | **HOW (Figma)** — port a section/snippet from a Figma frame via the Dev Mode MCP | Select a frame in Figma desktop, then `/figma-to-liquid` |
 | `design-sync` | Re-port worklist when `design/` is pulled forward | `/design-sync`, "design có bản mới", after `git -C design pull` |
 | `polish` | Finishing-pass QA — a11y · `xo-animate` reveal · `xo-hover` | `/polish <target>`, or design-to-liquid's completion handoff |
+| `editor-qa` | Live Theme Editor QA — add section/blocks, set fields, desktop↔mobile, screenshot | `/editor-qa <target>`, "test trên editor" |
+| `lighthouse-audit` | Lighthouse scores (Perf/A11y/BP/SEO) + Core Web Vitals against a storefront URL | `/lighthouse-audit <url>` — run manually once the theme is done |
 | `liquid` | Liquid language reference — tags, filters, objects, idioms, gotchas | Authoring/debugging any `.liquid` file |
 | `snippet` | How to author the `.liquid` body of a snippet | Creating/editing a snippet |
 | `schema` | How to write `schema.js` (section / block / global) | Creating/editing a schema |
 | `scss` | The SCSS framework: `color()` / `fz()` / `media()` / BEM | Writing `.global.scss` |
-| `xo-css` | Atomic class syntax: `p:s6 c:primary|h d:none@md` | Adding classes in liquid |
+| `xo-css` | Atomic class syntax: `p:1rem c:primary|h d:none@md` | Adding classes in liquid |
 | `liquid-doc` | `{% comment %} @param … %}` doc blocks | Top of a snippet file |
-| `git` | Scoped commits, no push, no amend | User types `/git` |
+| `motion` | Authority on wiring motion: `xo-animate` / `xo-parallax-scroll` / `xo-parallax-hover` (+ the `xo-start/xo-end` gotcha) | `/motion`, "add animation/parallax" |
+| `web-components` | Author a NEW `xo-*` web component (TS, `XoComponent`) into `src/scripts/` | `/web-components`, "create a web component" |
+| `git` | Scoped commits; after committing asks Push / commit next / stop (Step 11); push only on your explicit choice, never `--force`, no amend | User types `/git` |
 | `extract-icon` | Sync Lucide SVGs into `src/snippets/icons/icon-*.liquid` | "update icons", "sync icons", "lucide → snippet" |
 | `system-upgrade` | Check, evaluate + **upgrade** the `.claude/` system (skill changes delegated to `skill-creator`) | `/system-upgrade`, `/system-audit`, "check .claude", "nâng cấp hệ thống" |
+| `shopify-watch` | Radar for theme-relevant Shopify news, hands off to `/system-upgrade` | `/shopify-watch`, "what's new in Shopify" |
 
 ### Script tooling
 

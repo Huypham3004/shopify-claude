@@ -21,27 +21,33 @@ Agent `.claude/` đứng giữa: đọc design, viết Liquid, validate schema, 
 | Lớp | Vị trí | Vai trò |
 |-----|--------|---------|
 | **Bộ nhớ dự án** | `.agent-state/` | 3 file markdown: `PLAN.md` (hàng đợi ưu tiên ⚪🔵✅⏸❓), `PROGRESS.md` (nhật ký append-only, mỗi phiên 1 entry), `INVENTORY.md` (coverage map auto-generate). |
-| **Skill catalog** | `.claude/skills/<name>/` | 13 skill chuyên môn — mỗi skill là 1 thư mục có `SKILL.md` + `references/*.md` + `scripts/` nếu cần. |
+| **Skill catalog** | `.claude/skills/<name>/` | 19 skill chuyên môn — mỗi skill là 1 thư mục có `SKILL.md` + `references/*.md` + `scripts/` nếu cần. |
 | **Tích hợp ngoài** | `.mcp.json` | 3 MCP server (`xo-components`, `playwright`, `xo-design`) + `context7` cho docs lookup. |
 | **Guardrails** | `.claude/hooks/` + `settings.json` | `skill-reminder.cjs` — hook `PreToolUse` nhắc đúng skill theo file path ở mỗi lần Edit/Write; `settings.json` ghim model, plugin skill, và đăng ký hook. |
 
-### 13 skill
+### 19 skill
 
 | Skill | Trả lời | Khi nào kích hoạt |
 |-------|---------|---------------------|
 | `planner` | **WHAT + STATUS** — việc gì tiếp theo, đang ở đâu | Đầu mỗi phiên hoặc khi hỏi "what's next" |
 | `design-to-liquid` | **HOW** — port 1 section cụ thể (Step 0 tokens → Step 6 restyle) | User pick section trên xo-design hoặc gọi `/design-to-liquid` |
+| `figma-to-liquid` | **HOW (Figma)** — port section/snippet từ frame Figma qua Dev Mode MCP | Chọn frame trong Figma desktop rồi `/figma-to-liquid` |
 | `design-sync` | Worklist re-port khi `design/` được pull lên bản mới | `/design-sync`, "design có bản mới", sau `git -C design pull` |
 | `polish` | Finishing-pass QA — a11y · `xo-animate` reveal · `xo-hover` | `/polish <target>`, hoặc handoff khi design-to-liquid xong |
+| `editor-qa` | QA trên Theme Editor thật — add section/blocks, set field, desktop↔mobile, screenshot | `/editor-qa <target>`, "test trên editor" |
+| `lighthouse-audit` | Điểm Lighthouse (Perf/A11y/BP/SEO) + Core Web Vitals trên storefront URL | `/lighthouse-audit <url>` — chạy tay lúc theme đã xong |
 | `liquid` | Liquid language reference — tags, filters, objects, idioms, gotchas | Author/debug bất kỳ file `.liquid` nào |
 | `snippet` | Cách viết thân `.liquid` của snippet | Tạo/sửa snippet |
 | `schema` | Cách viết `schema.js` (section / block / global) | Tạo/sửa schema |
 | `scss` | Framework SCSS: `color()` / `fz()` / `media()` / BEM | Viết `.global.scss` |
-| `xo-css` | Atomic class syntax: `p:s6 c:primary|h d:none@md` | Class trên liquid |
+| `xo-css` | Atomic class syntax: `p:1rem c:primary|h d:none@md` | Class trên liquid |
 | `liquid-doc` | `{% comment %} @param … %}` doc block | Header file snippet |
-| `git` | Commit theo scope, không push, không amend | User gõ `/git` |
+| `motion` | Authority wiring motion: `xo-animate` / `xo-parallax-scroll` / `xo-parallax-hover` (+ gotcha `xo-start/xo-end`) | `/motion`, "thêm animation/parallax" |
+| `web-components` | Viết MỚI web component `xo-*` (TS, `XoComponent`) vào `src/scripts/` | `/web-components`, "tạo web component" |
+| `git` | Commit theo scope; sau commit hỏi Push / Commit tiếp / Dừng (Step 11); push chỉ khi bạn chọn, không `--force`, không amend | User gõ `/git` |
 | `extract-icon` | Sync SVG Lucide vào `src/snippets/icons/icon-*.liquid` | "update icons", "sync icons", "lucide → snippet" |
 | `system-upgrade` | Check, đánh giá + **nâng cấp** hệ `.claude/` (việc động tới skill delegate cho `skill-creator`) | `/system-upgrade`, `/system-audit`, "kiểm tra hệ thống", "nâng cấp hệ thống" |
+| `shopify-watch` | Radar tin Shopify liên quan theme, hand-off cho `/system-upgrade` | `/shopify-watch`, "Shopify có gì mới" |
 
 ### Script tooling
 
