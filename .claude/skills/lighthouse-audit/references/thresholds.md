@@ -2,7 +2,10 @@
 
 ## Pass thresholds (per category)
 
-Lighthouse colour-codes scores: **0–49 red, 50–89 orange, 90–100 green**. This skill's default **pass = 90+** (green) for every category — that's the "đạt chuẩn" bar. The `parse-report.py --pass N` flag changes it if the user wants a softer bar (e.g. `--pass 80` for an early-stage port).
+Lighthouse colour-codes scores: **0–49 red, 50–89 orange, 90–100 green**. This skill's default **pass = 90+** (green) for every category — an **aspirational, internal** bar. The `parse-report.py --pass N` flag changes it if the user wants a softer bar (e.g. `--pass 80` for an early-stage port).
+
+> [!IMPORTANT]
+> **Internal bar ≠ Shopify Theme Store submission bar.** The actual Theme Store minimums (per the requirements doc — `design-to-liquid/references/theme-store-requirements.md` §8) are **Performance ≥ 60 (average)** and **Accessibility ≥ 90 (average)** across Product/Collection/Home on desktop + mobile — measured on Shopify's benchmark dataset, not an arbitrary URL. Best Practices and SEO have no numeric submission floor. So when the user's goal is *"will this pass Theme Store submission?"*, judge Performance against **60**, Accessibility against **90**, and treat our default 90-everywhere as the higher quality target. State which bar you're reporting against.
 
 | Category | Pass | What a low score usually means for a theme port |
 |----------|------|--------------------------------------------------|
