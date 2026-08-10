@@ -1,15 +1,11 @@
 {
-  "model": "claude-opus-4-8[1m]",
   "env": {
     "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"
   },
   "permissions": {
     "defaultMode": "bypassPermissions"
   },
-  "enabledPlugins": {
-    "skill-creator@claude-plugins-official": true,
-    "context7@claude-plugins-official": true
-  },
+  "model": "claude-opus-4-8[1m]",
   "hooks": {
     "PreToolUse": [
       {
@@ -22,5 +18,9 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "skill-creator@claude-plugins-official": true,
+    "context7@claude-plugins-official": true
   }
 }
