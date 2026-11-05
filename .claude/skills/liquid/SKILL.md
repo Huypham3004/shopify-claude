@@ -37,6 +37,7 @@ Project's Liquid reference — syntax, semantics, project idioms. Self-contained
 | "How do I wrap my section markup so the `section` snippet handles padding/bg/scheme?" | `references/idioms.md` — capture+render wrapper pattern |
 | "Why does my `for product in collection.products` cut off at 50?" | `references/gotchas.md` — for-loop ceiling, use paginate |
 | "How do I make a boolean setting default to `false` survive the `\| default:` filter?" | `references/idioms.md` — `default | allow_false: true` |
+| "Can I put `\| t` or `== false` directly in a `{% render %}` argument?" | `references/gotchas.md` #33 — no; assign in the prelude first |
 | "Which image width should I pass to `image_url`?" | `references/idioms.md` — responsive image sizing |
 | "Should this `.liquid` string be `\| t`, a schema setting, or hardcoded? Where do I add the key?" | `references/translations.md` — decision + `src/locales/NN-<ns>.json` convention |
 
@@ -115,6 +116,8 @@ The `image` snippet (`src/snippets/_base/image/image.liquid`) handles `image_url
 ### 6. Render isolation
 
 `{% render 'X', param: value %}` is **isolated** from the calling scope. The snippet sees only the params you pass + global objects (`section`, `block`, `settings`, `cart`, `request`, etc.). It does NOT see local variables from the caller. This is intentional — keeps snippets reusable. See `references/gotchas.md`.
+
+Each argument is a **bare value** — a literal or a variable. No filters, no comparisons, no arithmetic: `aria_label: 'a.b' | t` and `lazyload: forloop.first == false` are hard Liquid syntax errors, not silent no-ops. Compute in the `{% liquid %}` prelude, pass the variable in. See `references/gotchas.md` #33.
 
 ### 7. Translatable strings — `| t`, keyed in `src/locales/`
 

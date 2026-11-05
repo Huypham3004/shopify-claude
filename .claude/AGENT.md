@@ -112,10 +112,13 @@ Why: PROGRESS is the next-agent's read-on-start orientation for "where are we in
 | -------------------- | --------------------------------------------------------------------------------------------------- |
 | **`planner`**          | WHAT to do + STATUS. Owns PLAN.md / PROGRESS.md / INVENTORY.md. Use at session start and for planning. |
 | **`design-to-liquid`** | HOW to port a section. Entry: check `xo-design` MCP picker for the section the user pointed at (`mcp__xo-design__get_selection`); fall through to manual survey if no selection. Then Step 0 (tokens) → Step 1 (survey) → Step 2 (variant audit) → … → Step 6 (restyle). Use during actual porting work. Suggests `/polish` at completion. |
+| **`build-page`**       | `/build-page <page>` — build the JSON page TEMPLATE for a design page (the page/demo layer `design-to-liquid` Step 5 only gestures at). Reads the design page, takes the ordered `<xo-include>` list **inside `<main>`** as the section order (outside `<main>` = section groups, excluded), resolves each design section to its ported `src/sections/<name>` (honours renames recorded in `.agent-state`), then writes `src/pages/<folder>/<template>.preset-N.json`. Settings are generated from each section's COMPILED schema defaults then overridden, so a template can never carry an undeclared key. Images follow the design's own handoff contract when it ships one (basename of the CDN url, query dropped, verified against `.shopify/images.json`); with no manifest it asks instead of inventing. **Two mandatory gates** — unported sections, unresolvable images — plus a post-write verification pass that reports every remaining difference. Bundles `scan-page.py`. |
 | `figma-to-liquid`      | `/figma-to-liquid` — port a UI unit from a **Figma** frame into `src/sections/<name>/` or `src/snippets/<name>/`. Entry: user selects a frame in the Figma **desktop** app; skill reads the current selection via the **Dev Mode MCP** (`mcp__figma-dev-mode-mcp__*` — get_metadata/get_code/get_variable_defs/get_image), maps Figma primitives → project primitives, runs the Q1(name)/Q7(CSS) interview, audits existing snippets, lifts literals to schema settings, restyles. Self-contained sibling of `design-to-liquid` (source = Figma, not the `design/` HTML+SCSS folder); reuses the `liquid`/`snippet`/`schema`/`scss`/`xo-css` sub-skills + project validators. |
-| `design-sync`          | `/design-sync` — bridge for when the `design/` repo (separate git clone, versioned via `design/package.json`) is pulled forward. Diffs current design HEAD vs the last synced baseline in `.agent-state/DESIGN-SYNC.md`, buckets changes by severity, resolves which already-ported units need re-sync vs net-new backlog, proposes batches handed off to `design-to-liquid`. Auto-appends net-new sections to the PLAN.md backlog (deduped) so they're never lost. Advances the baseline ledger only on user confirmation. |
+| `design-sync`          | `/design-sync` — bridge for when the `design/` repo (separate git clone, versioned via `design/package.json`) is pulled forward. Diffs current design HEAD vs the last synced baseline in `.agent-state/DESIGN-SYNC.md`, buckets changes by severity, resolves which already-ported units need re-sync vs net-new backlog, proposes batches handed off to `design-to-liquid`. Auto-appends net-new sections to the PLAN.md backlog (deduped) so they're never lost. Advances the baseline ledger only on user confirmation. **Every sync also runs `scripts/image-drift.py`** — an image swap is a no-op for `src/sections/` (the liquid renders a merchant `image_picker`) but NOT for `src/pages/**/*.json`, which hard-codes `shopify://shop_images/<basename>`; the script reports every template setting still pointing at a dropped image and asks per row (repoint / clear / keep / defer), never rewriting one itself. |
+| `live-sync`            | `/live-sync` — one-way bridge **live demo store → repo**. Pulls each demo's LIVE theme (`shopify theme pull --live --nodelete`, templates JSON only) into gitignored `demo-live/<Label>/`, mapping preset→store via `demo-live/stores.json` (Verso→preset-1, Timbre→preset-2, Wiggle→preset-3). Then structurally diffs every live `templates/<name>.json` against `src/pages/**/<name>.<preset>.json` and overwrites ONLY the files the user selects. Never pushes to a store; never touches liquid/schema. Section groups + `settings_data` are out of scope by design. |
 | `polish`               | `/polish <target>` — finishing-pass QA after a section/snippet/page/theme is ported. Audits 3 dimensions (a11y · `xo-animate` scroll-reveal · `xo-hover` interaction), proposes a grouped checklist with exact markup, applies only user-selected items. Standalone OR via design-to-liquid's completion handoff. Bundles `scan-target.py` detector. |
 | `editor-qa`            | `/editor-qa <target>` — **live**-editor QA pass. Drives the real Shopify Theme Editor (merchant's logged-in session, via Playwright **extension-mode** MCP) to exercise a just-ported section/block: add section, add blocks, set fields, scroll, toggle **desktop↔mobile** (`⌘⌃M`) for responsive, screenshot both vs `design/`. Never Saves without asking. Requires the Playwright Extension connected to a logged-in editor tab (`references/setup.md`). Standalone OR via design-to-liquid's completion handoff. Bundles `grep-refs.py`. |
+| `theme-store-review`   | `/theme-store-review` — pre-submit gate against EVERY Shopify Theme Store reviewer comment ever received (theme-agnostic ledger `references/feedback-ledger.md`, stable `SF-*` IDs). AUDIT mode: `scripts/scan-feedback.py <theme-root>` static scan → triage → runtime checks → PASS/FAIL report with file:line + fix direction; fixes only on approval. INGEST mode: merge a new feedback round into the ledger + scanner. Portable to sibling themes (Pawra, Hexon, …) by copying the skill folder. |
 | `lighthouse-audit`     | `/lighthouse-audit <storefront-url>` — read-only **stateless** Lighthouse score radar. Runs `npx lighthouse` (mobile + desktop) against a storefront URL the user supplies (NOT the admin `/editor` URL), reports all 4 category scores + Core Web Vitals (LCP/CLS/TBT/FCP/SI) PASS/FAIL vs a 90+ bar, then **hands off** failing audits — a11y → `polish`, image/markup perf → `design-to-liquid`, app/platform perf + SEO/Best-Practices → flag only. Splits app-script noise from theme-owned issues. Changes nothing; reports land in gitignorable `.lighthouse/`. Bundles `run-lighthouse.sh` + `parse-report.py`. |
 | **`snippet`**          | Authoring the `.liquid` body of a snippet — pure / schema (context) / variant (dispatcher + numbered) shapes, the `{% liquid %}` prelude conventions, conditional wrappers, complex class composition, nested render. |
 | **`liquid`**           | Liquid language reference — tags, filters, objects/drops, blocks, project idioms, gotchas. Self-contained; material distilled from shopify.dev/docs/api/liquid via context7. |
@@ -156,7 +159,26 @@ python .claude/skills/design-to-liquid/scripts/validate-liquid.py src/sections/<
 python .claude/skills/design-to-liquid/scripts/validate-liquid.py --all
 ```
 
-Catches runtime-silent Liquid bugs that don't show up in schema validation — currently the `assign`-with-condition mistake (`{% assign x = a != blank %}` doesn't evaluate the comparison; `assign` takes a value, not a condition — see `liquid` skill `gotchas.md` #31). The rule set is intentionally small and grows as new bug classes surface.
+Catches Liquid bugs schema validation can't see. Two rules today:
+
+- **`assign`-with-condition** — `{% assign x = a != blank %}` doesn't evaluate the comparison; `assign` takes a value, not a condition (`liquid` skill `gotchas.md` #31). Compiles, misbehaves at runtime.
+- **render-arg-expression** — `{% render 'x', label: 'a.b' | t %}` / `{% render 'x', lazy: forloop.first == false %}`; a render/include/content_for argument takes a bare value, never a filter, comparison, logic or arithmetic (`gotchas.md` #33). Does NOT compile — the storefront shows a red `Expected end_of_string but found pipe`.
+
+Both rules scan the tag form and the bare `{% liquid %}` prelude form, and skip `{% comment %}` / `{% raw %}` bodies so doc-block examples never trip them. The rule set is intentionally small and grows as new bug classes surface.
+
+**After every `schema.js` setting REMOVAL / rename** — run the template validator:
+
+```bash
+# Validate the templates of one page folder (or a single .json)
+python .claude/skills/design-to-liquid/scripts/validate-templates.py src/pages/<page>/
+
+# Sweep everything
+python .claude/skills/design-to-liquid/scripts/validate-templates.py --all
+```
+
+`validate-schema.py` checks a schema against itself; this checks the OTHER direction — every `settings` key already stored in `src/pages/**/*.json` must still be declared by the schema of the section/block that owns it. Dropping a setting does NOT clean the templates that already wrote it, and Shopify never complains: unknown keys are ignored at render, so the drift stays invisible until a merchant saves in the Theme Editor (Shopify silently discards them) and the next `/live-sync` shows a diff nobody authored.
+
+Catches: orphan section settings, orphan block settings (inline + theme blocks, nested), section types with no `schema.js`, block types the parent schema does not accept, invalid JSON. Setting ids are read from the COMPILED schema (one `node` process imports every `schema.js`), so builder-generated ids — `deviceSetting()`, `paddingAttrsSchemaSettings()`, suffixed helpers like `aspect_ratio_product_card` — resolve exactly as Shopify sees them.
 
 ## Key conventions
 
@@ -208,11 +230,11 @@ Targets (already exist — DO NOT create siblings):
 
 | Surface | Path | xo-modal name (if applicable) |
 | --- | --- | --- |
-| Header | `src/groups/headers/header/` | — |
-| Mega menu | `src/groups/headers/mega-menu/` | — (uses `<template xo-mega-menu-name>` dispatch — see `references/mega-menu.md`) |
+| Header (ONE section, `layout` select → `src/snippets/header-layout/header-<layout>/`) | `src/groups/headers/header/` | — |
+| Mega menu | `src/groups/headers/megamenu-*/` | — (uses `<template xo-mega-menu-name>` dispatch — see `references/mega-menu.md`) |
 | Announcement bar | `src/groups/headers/announcement-bar/` | — |
 | Predictive search (search modal) | `src/groups/headers/main-predictive-search/` | `search` |
-| Footer | `src/groups/footers/footer/` | — |
+| Footer (ONE section, `layout` select → `src/snippets/footer-layout/footer-<layout>/`) | `src/groups/footers/footer/` | — |
 | Cart mini (drawer/notification) | `src/groups/overlay/xo-cart-mini/` | `cart` |
 | Quick view | `src/groups/overlay/quick-view/` | (verify per use) |
 | Product compare modal | `src/groups/overlay/product-compare-modal/` | (verify per use) |
@@ -229,13 +251,13 @@ Targets (already exist — DO NOT create siblings):
 | Step | Action | When |
 |---|---|---|
 | A | Tweak default settings in `<group>-group.json` | Existing schema's defaults don't match design (logo position, sticky direction, color scheme, action toggles) |
-| B | Restyle SCSS in place (`<name>.global.scss`) | Visual aesthetic (typography, color, spacing, decorative shape) doesn't match — most common case |
+| B | Restyle SCSS in place (`<name>.global.scss`; header/footer: the active layout's SCSS — see `header-port.md`) | Visual aesthetic (typography, color, spacing, decorative shape) doesn't match — most common case |
 | C | Add ONE new schema setting in `<name>/schema.js` + read in liquid | Design needs a behavior toggle that has no existing setting |
 | D | **STOP — ask user** before editing `<name>.liquid` markup or creating new file | Markup changes ripple to every theme instance; file creation breaks the "override" assumption |
 
-Sub-brand variants (`header-pet`, `header-sound`, `header-parfum`, `header-kids`, etc.) → `body.theme-*` SCSS cascade inside the SAME `<name>.global.scss`, NEVER a new `src/groups/headers/header-pet/` folder.
+**Header and footer: one section each, looks are `layout` values (2026-11 policy).** Never add a second header or footer section type — `limit: 1` only applies per type, so two types let merchants activate both, which the Theme Store rejects (SF-SECTION-01). A design header/footer (`header-kids`, `header-sound`, `footer-parfum`, …) maps to an existing `layout` of the single section (A/B/C above), or — only after the user approves — to a NEW layout: a snippet in `src/snippets/header-layout/` / `footer-layout/` + one more option in the `layout` select, named by archetype (e.g. `editorial`, `overlay`, `campaign`), not by sub-brand. Full rules: `.claude/skills/design-to-liquid/references/header-port.md` and `footer-port.md`.
 
-**Only create a new file** when the user explicitly says "make a new header" / "second header variant" / equivalent in their own language.
+Other groups (popups, overlays, announcement-bar): **only create a new file** when the user explicitly says so in their own language.
 
 **References:**
 - `.claude/skills/design-to-liquid/references/mega-menu.md` — mega-menu dispatch (`<template xo-mega-menu-name xo-mega-menu-index>` ↔ `<xo-mega-menu xo-name xo-index>` matching)
@@ -317,6 +339,7 @@ Append one entry to `.agent-state/PROGRESS.md` at the TOP of the file (under the
 | Build-time tokens (xo-css plugin) | `theme-config/theme.config.json` |
 | Compiled Shopify theme | `shopify/` (do not hand-edit) |
 | State (planner) | `.agent-state/{PLAN, PROGRESS, INVENTORY}.md` |
+| Live demo pulls (live-sync) | `demo-live/<Label>/templates/*.json` (gitignored) + `demo-live/stores.json` (preset → store map) |
 | Skills | `.claude/skills/*/` |
 | MCP servers | `.mcp.json` (xo-components, playwright, xo-design) |
 | xo-design (design preview + picker) | `design/xo-design/` (portable bundle) — `cd design && npm run xo-design` to start (`npm run xo-design:stop` to stop). Exposes the picker MCP at the URL listed in `.mcp.json#xo-design`. |

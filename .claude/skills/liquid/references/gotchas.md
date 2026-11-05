@@ -510,6 +510,8 @@ Two correct forms:
 
 Reach for **B** by default — when a condition is checked once, an intermediate boolean is just noise. Use **A** only when the same boolean gates several places (e.g. multiple blocks) and recomputing the comparison inline each time would be harder to read. This bites most inside the `{% liquid %}` prelude, where `has_x` flags sit next to real assigns and the value-vs-condition distinction is easy to forget — keep prelude assigns to values + filters, and move every comparison into an `if`.
 
+The same value-not-expression rule applies one level out, at `{% render %}` argument sites — see #33, where the two compose: a comparison you want to pass into a snippet needs BOTH an `if` (because of this gotcha) and a prelude variable (because of #33).
+
 ---
 
 ## 32. `richtext` output wrapper must be `<div>`, never `<p>`
@@ -536,6 +538,61 @@ Contrast with `inline_richtext` (#4): it emits inline tags only (no block wrappe
 | `inline_richtext` | any — `<p>`, `<h1>`-`<h6>`, `<span>`, … |
 
 Both field types' wrappers also carry the `rte` class — see AGENT.md § "rte wrapper class on richtext output".
+
+---
+
+## 33. A `render` argument takes a bare value — no filters, no comparisons
+
+`{% render 'X', param: … %}` parses each argument as a **single value expression**: a literal, or a variable (with property/index access). It is NOT a full expression slot. A filter pipe or a comparison operator there is a **hard Liquid syntax error** — the file fails to compile and the storefront shows a red `Liquid syntax error (line N): Expected end_of_string but found pipe` / `… but found comparison`. Same rule for `{% include %}`.
+
+```liquid
+{# WRONG — filter in an argument #}
+{%- render 'icon-button', type: 'button', aria_label: 'general.slider.previous_slide' | t -%}
+{#                                                    ^ Expected end_of_string but found pipe #}
+
+{# WRONG — comparison in an argument #}
+{% render 'image', image: image, lazyload: forloop.first == false %}
+{#                                         ^ Expected end_of_string but found comparison #}
+```
+
+Resolve the value in the `{% liquid %}` prelude first, pass the variable in:
+
+```liquid
+{%- liquid
+  assign prev_slide_label = 'general.slider.previous_slide' | t
+-%}
+{%- render 'icon-button', type: 'button', aria_label: prev_slide_label -%}
+```
+
+For a **comparison** you need two steps, because `assign` cannot hold a condition either (#31) — `assign lazyload_image = forloop.first == false` compiles but silently assigns an empty string:
+
+```liquid
+{%- liquid
+  assign lazyload_image = true
+  if forloop.first
+    assign lazyload_image = false
+  endif
+-%}
+{% render 'image', image: image, lazyload: lazyload_image %}
+```
+
+Note the passed `false` only survives inside the snippet if its prelude reads the param with `| default: true, allow_false: true` — see `references/idioms.md`.
+
+### What IS allowed in an argument
+
+| Form | OK? | Example |
+| --- | --- | --- |
+| String / number / boolean literal | ✅ | `btn_size: 'md'`, `columns: 3`, `height_fill: true` |
+| Variable | ✅ | `image: image`, `alt: front_alt` |
+| Property / index access | ✅ | `alt: block.settings.image_alt`, `item: rows[0]` |
+| Filter pipe | ❌ | `aria_label: 'a.b' \| t`, `class: base \| append: ' x'` |
+| Comparison / logic | ❌ | `lazyload: forloop.first == false`, `show: a and b` |
+| Arithmetic | ❌ | `index: forloop.index0 + 1` |
+| `for` / `with` (the two real keywords) | ✅ | `{% render 'card' for products as product %}` |
+
+The trap is that a `|` or `==` **inside a quoted string** is fine — `addition_class: 'bdrs:sm|w'` (an xo-css pseudo separator) is valid, because the parser sees one string literal. Only an operator at argument level breaks it.
+
+**Why it bites here:** the `{% liquid %}` prelude convention makes it feel like every value is already computed, so a one-off `| t` or a `== false` gets written inline at the render site. Grep before shipping — the compile error only surfaces when that template is actually rendered, which for a snippet used on one page can be long after the edit.
 
 ---
 

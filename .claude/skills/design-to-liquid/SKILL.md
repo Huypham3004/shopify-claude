@@ -1,7 +1,7 @@
 ---
 name: design-to-liquid
 argument-hint: "[section-name]"
-description: Use when porting a static HTML design (typically under a design/ folder built with the xo-include + xo-component HTML assembler convention) into this Shopify Liquid theme under src/. ENTRY POINT — every invocation first checks the `xo-design` MCP (`mcp__xo-design__get_selection`) for a section the user picked via the xo-design ◎ Pick section toolbar, so phrases like "/design-to-liquid làm section này" / "port this one" / a bare "/design-to-liquid" auto-target the selected section without re-asking. Falls back to manual section discovery only when no selection is set. Step 0 — map design tokens (colors, fonts, type scale, radius, spacing) into theme settings (global-schema + settings_data + theme.config.json) so every section inherits the foundation via CSS variables; never inline hex/font-family per section. Then covers file-structure mapping (design page → JSON template, design section → liquid section, design component → snippet), converting xo-include/xo-component to {% section %} / {% render %}, lifting per-section hardcoded text/images/links into schema settings, and consuming any design documentation/blueprints. The default working assumption is that src/snippets/ already contains stable, reusable snippets — so BEFORE rendering any snippet inside a new section, audit its existing variants (`<snippet>-1`, `<snippet>-2`, …), trace what's hardcoded vs settings-driven, and pick the closest match. Escalate only when needed — theme setting cascade, then variant modification, then new variant. Never inline section-scoped CSS to hack a snippet's look. Ships a Python validator at .claude/skills/design-to-liquid/scripts/validate-schema.py to run after each schema.js edit.
+description: Use when porting a static HTML design (typically under a design/ folder built with the xo-include + xo-component HTML assembler convention) into this Shopify Liquid theme under src/. ENTRY POINT — every invocation first checks the `xo-design` MCP (`mcp__xo-design__get_selection`) for a section the user picked via the xo-design ◎ Pick section toolbar, so phrases like "/design-to-liquid làm section này" / "port this one" / a bare "/design-to-liquid" auto-target the selected section without re-asking. Falls back to manual section discovery only when no selection is set. Step 0 — map design tokens (colors, fonts, type scale, radius, spacing) into theme settings (global-schema + settings_data + theme.config.json) so every section inherits the foundation via CSS variables; never inline hex/font-family per section. Then covers file-structure mapping (design page → JSON template, design section → liquid section, design component → snippet), converting xo-include/xo-component to {% section %} / {% render %}, lifting per-section hardcoded text/images/links into schema settings, and consuming any design documentation/blueprints. The default working assumption is that src/snippets/ already contains stable, reusable snippets — so BEFORE rendering any snippet inside a new section, audit its existing variants (`<snippet>-1`, `<snippet>-2`, …), trace what's hardcoded vs settings-driven, and pick the closest match. Escalate only when needed — theme setting cascade, then variant modification, then new variant. Never inline section-scoped CSS to hack a snippet's look. Header and footer designs are a special case — use this skill too for "port header", "làm header theo design", "port header-1 / header-2 / header-kids → theme", "footer theo design", "port footer-3 / footer-parfum": they never become a new section; the skill routes them to adapting the single header/footer section via its `layout` setting + layout snippets (references/header-port.md, references/footer-port.md). Ships a Python validator at .claude/skills/design-to-liquid/scripts/validate-schema.py to run after each schema.js edit.
 ---
 
 # Design → Liquid
@@ -23,7 +23,7 @@ Pipeline skill for porting any HTML design into this Shopify Liquid theme.
 >
 > Creating a brand-new snippet should be the **exception**, not the default. If you think you need a new snippet, search `src/snippets/` first.
 >
-> **Before modifying shared infrastructure** (any file under `src/groups/`, any frequently-shared snippet like `cart-mini`, `predictive-search-base`, `modal-content`, `menu-horizontal`), pause and consider the `system-upgrade` skill as a pre-port checkpoint — if no existing reference under `references/` documents the pattern you're about to modify, document FIRST (new reference / AGENT.md addendum), commit `.claude` umbrella, THEN apply the port. This mirrors the header-port + modal-port precedents and prevents the next agent from re-deriving the same pattern from scratch.
+> **Before modifying shared infrastructure** (any file under `src/groups/`, any frequently-shared snippet like `cart-mini`, `predictive-search-base`, `modal-content`, `menu-horizontal`), pause and consider the `system-upgrade` skill as a pre-port checkpoint — if no existing reference under `references/` documents the pattern you're about to modify, document FIRST (new reference / AGENT.md addendum), commit `.claude` umbrella, THEN apply the port. This mirrors the header-port + modal-port precedents and prevents the next agent from re-deriving the same pattern from scratch. (Header/footer ports are already documented in `references/header-port.md` / `footer-port.md` — no checkpoint needed unless the port goes beyond them.)
 
 ## Two layers of authority — project conventions + Shopify-native
 
@@ -109,6 +109,29 @@ pass straight to `Read()`. Studio-mode previews never expose these tools, so
 treat any failure as "no selection".
 
 → See `references/picker-protocol.md` for the full protocol + edge cases.
+
+### Is the target a header or footer? — route before Step 1
+
+Once you know which design section you're porting, check whether it is a **site header or footer**. Signals
+(any one is enough):
+
+- its design folder name starts with `header` or `footer`, whatever follows. The suffix is whatever the
+  designer chose — a number (`header-1`, `footer-3`), a preset (`header-kids`), or any arbitrary word
+  (`header-aurora`, `footer-minimal`, `header-v2-final`). It carries no meaning for the port and never becomes
+  a section or layout name. A designer may also skip the prefix entirely (`topbar`, `site-nav`,
+  `bottom-bar`) — the next two signals catch those;
+- on the design page it sits **outside `<main>`** (header/footer area, not page content);
+- the markup is the site chrome: logo/wordmark + main nav + search/account/cart icons (header), or link
+  columns + newsletter/social + copyright/payment row (footer).
+
+If it is, **don't create a section.** The theme ships exactly one `header` and one `footer` section
+(`src/groups/headers/header/`, `src/groups/footers/footer/`), each with a `layout` select that dispatches to
+layout snippets in `src/snippets/header-layout/` / `src/snippets/footer-layout/`. A second header/footer
+section type would let merchants activate two at once — a Theme Store rejection (SF-SECTION-01). The port
+becomes "make the existing section match the design": pick/tune a layout, restyle, or (after asking) add a
+layout. Follow `references/header-port.md` or `references/footer-port.md` instead of Steps 3–5 below; Step 0
+(tokens), Step 1 (two-sided survey), Q7 of Step 1.5 and Step 6 (restyle) still apply, and Q1 becomes the
+"which layout?" question (`references/clarify-protocol.md` § Q1).
 
 ## Authoring Workflow
 
@@ -230,7 +253,7 @@ Detects: disallowed `inline_richtext` tags, missing range bounds, undefined sele
 python .claude/skills/design-to-liquid/scripts/validate-liquid.py src/sections/<name>/
 ```
 
-Catches runtime-silent Liquid bugs the schema validator can't see — currently the `assign`-with-condition mistake (`{% assign x = a != blank %}` doesn't evaluate the comparison; `assign` takes a value, not a condition — fix per the `liquid` skill's `gotchas.md` #31). This is a verification gate, not optional polish: it closes the loop on confident-but-wrong Liquid the same way `validate-schema.py` does for schema, rather than trusting that you remembered to consult the `liquid` skill.
+Catches Liquid bugs the schema validator can't see — the `assign`-with-condition mistake (`{% assign x = a != blank %}` doesn't evaluate the comparison; `assign` takes a value, not a condition — `liquid` skill `gotchas.md` #31), and render arguments carrying an expression (`{% render 'x', label: 'a.b' | t %}`, `lazy: forloop.first == false` — an argument takes a bare value; `gotchas.md` #33, a hard compile error). This is a verification gate, not optional polish: it closes the loop on confident-but-wrong Liquid the same way `validate-schema.py` does for schema, rather than trusting that you remembered to consult the `liquid` skill.
 
 > [!IMPORTANT]
 > **Compile gotcha — blocks + snippets don't compile via `npm run build`.** The `vite-xotiny` plugin processes `src/blocks/` and `src/snippets/` only in `configureServer` (dev mode). To compile a new block/snippet without dev running, force-process via direct import:
@@ -282,6 +305,8 @@ For every reused snippet whose visual doesn't match the design out-of-the-box, r
 - **Layout / grid — the `layout` system (grid/carousel/masonry switch) vs static grid vs raw CSS (Q8)** → `references/grid-and-layout.md`
 - **Building the JSON page template** → `references/pages-to-templates.md`
 - **Creating a new liquid section that composes existing snippets** → `references/sections-to-liquid.md`
+- **Porting a design header** (match the one `header` section via its `layout` setting — never a new section) → `references/header-port.md`
+- **Porting a design footer** (same model, `footer` section + `footer-layout` snippets) → `references/footer-port.md`
 - **Promoting hardcoded values to schema settings** → `references/data-to-settings.md`
 - **Mapping Lucide icons / handling images** → `references/icons-and-images.md`
 - **The rare case where a new snippet is genuinely needed** → `references/components-to-snippets.md`
@@ -300,6 +325,7 @@ For every reused snippet whose visual doesn't match the design out-of-the-box, r
 | Icon snippets                                                  | `src/snippets/icons/icon-<name>.liquid`           |
 | Existing sections                                              | `src/sections/<name>/<name>.liquid` + `schema.js` |
 | Section groups (header / footer / popups / etc.)               | `src/groups/<group>/<name>/`                      |
+| Header / footer layout snippets (one per `layout` value)       | `src/snippets/header-layout/`, `src/snippets/footer-layout/` |
 | Page templates                                                 | `src/pages/<template>/*.json`                     |
 | Layout shell                                                   | `src/layout/theme.liquid`                         |
 | Theme global-schemas (Theme Editor inputs)                     | `src/config/global-schema/*.js`                   |

@@ -1,7 +1,7 @@
 ---
 name: design-sync
 argument-hint: "(no args — diff design HEAD vs baseline)"
-description: Use when the design source has been updated and the ported Shopify theme may now be behind. The design/ folder is a SEPARATE git repo (cloned from the upstream Folio HTML template) versioned via design/package.json; pulling a new version advances its git HEAD. As its pre-flight step this skill now brings the design clone up to date ITSELF (git fetch → show incoming commits → confirm → `git -C design pull --ff-only`), rather than assuming you pre-pulled. Then it diffs the current design HEAD against the last synced baseline (recorded in .agent-state/DESIGN-SYNC.md), buckets what changed (tokens/foundation, sections, components, pages), cross-references PROGRESS.md to find which changed units are ALREADY PORTED, and reports ONLY those as a re-sync worklist (a severity-sorted impact table + batched re-port handoffs to design-to-liquid). Net-new sections (added in the design but never ported) are auto-registered into the PLAN.md backlog as ⚪ pending items, deduped against existing backlog and already-ported units so re-runs never duplicate — the actual porting still belongs to design-to-liquid, not here. Invoke this for "/design-sync", "I pulled a new design", "design có bản mới", "design update / cập nhật design", "check design changes", "đồng bộ design", "what changed in the design since last time", "design version bumped", "re-port what's stale", or at the start of a session right after a `git -C design pull`. Do NOT use it to port a brand-new section from scratch (that's design-to-liquid) or to track src-side progress (that's planner) — design-sync is the bridge that turns "design moved forward" into "here's the re-port worklist". After it reports, it updates the DESIGN-SYNC.md baseline ledger only once the user confirms a batch is actually synced.
+description: Use when the design source has been updated and the ported Shopify theme may now be behind. The design/ folder is a SEPARATE git repo (cloned from the upstream Folio HTML template) versioned via design/package.json; pulling a new version advances its git HEAD. As its pre-flight step this skill now brings the design clone up to date ITSELF (git fetch → show incoming commits → confirm → `git -C design pull --ff-only`), rather than assuming you pre-pulled. Then it diffs the current design HEAD against the last synced baseline (recorded in .agent-state/DESIGN-SYNC.md), buckets what changed (tokens/foundation, sections, components, pages), cross-references PROGRESS.md to find which changed units are ALREADY PORTED, and reports ONLY those as a re-sync worklist (a severity-sorted impact table + batched re-port handoffs to design-to-liquid). Net-new sections (added in the design but never ported) are auto-registered into the PLAN.md backlog as ⚪ pending items, deduped against existing backlog and already-ported units so re-runs never duplicate — the actual porting still belongs to design-to-liquid, not here. Invoke this for "/design-sync", "I pulled a new design", "design có bản mới", "design update / cập nhật design", "check design changes", "đồng bộ design", "what changed in the design since last time", "design version bumped", "re-port what's stale", or at the start of a session right after a `git -C design pull`. Also runs a TEMPLATE IMAGE DRIFT pass on every sync (`scripts/image-drift.py`): when the design swaps an image, the ported `.liquid` is unaffected (it renders a merchant image_picker) but `src/pages/**/*.json` is NOT — a template hard-codes `shopify://shop_images/<basename>` and the basename is exactly what changed, so the reference silently reads blank. It reports every template setting still pointing at an image the design no longer uses, with the likely replacements, and asks per row — repoint / clear / keep / defer — never rewriting a reference on its own. Do NOT use it to port a brand-new section from scratch (that's design-to-liquid) or to track src-side progress (that's planner) — design-sync is the bridge that turns "design moved forward" into "here's the re-port worklist". After it reports, it updates the DESIGN-SYNC.md baseline ledger only once the user confirms a batch is actually synced.
 ---
 
 # design-sync
@@ -100,7 +100,41 @@ The engine can't know whether a design unit was ported, because the mapping is f
    - **Net-new (added, never ported)** → not a re-sync, but don't let it vanish. Resolve only enough to NAME the unit and propose a candidate `src/` target path stub (e.g. design `testimonial-marquee` → `src/sections/testimonial-marquee/`), then queue it for the PLAN.md backlog write in **Step 3.5**. Don't deep-resolve or port — name + type + candidate path is enough.
    - **Not-yet-ported but modified** → out of scope; lightly tally, don't deep-resolve. Porting it is `design-to-liquid` work, not a re-sync.
 
+> [!IMPORTANT]
+> **An image-only change is a no-op for `src/sections/`, and actionable for `src/pages/`.** Do not stop at "the diff only swaps `img src` urls, and the port drives images from merchant `image_picker` settings" — that is true of the `.liquid`, and false of the JSON templates. A page template hard-codes `"image": "shopify://shop_images/<basename>"`, and the basename is precisely what an image swap changes. The reference silently reads blank; nothing errors. (This is why the 2026-08-20 ledger entry dismissed ~55 image-swap units as zero-actionable — correct for the sections, incomplete for the templates.) Resolve it in Step 2.5, not by eye.
+
 Keep this fast — you only need enough to confidently bucket *ported* vs *net-new* vs *not-yet-ported-modified*. Stop resolving a unit the moment it's confidently NOT ported (0 mentions + `added` → trust it, queue it for the backlog, move on); spend deeper judgment only on the ported set.
+
+## Step 2.5 — Template image drift (always run)
+
+Sections re-sync through `design-to-liquid`; templates do not — nothing else in the system looks at them. Run this on every sync, even when the 🟠 list looks like pure asset churn:
+
+```bash
+python3 .claude/skills/design-sync/scripts/image-drift.py            # baseline from the ledger
+python3 .claude/skills/design-sync/scripts/image-drift.py --since <ref>
+python3 .claude/skills/design-sync/scripts/image-drift.py --audit    # broad sweep, ignores history
+python3 .claude/skills/design-sync/scripts/image-drift.py --json
+```
+
+It collects every `shopify://shop_images/<basename>` under `src/pages/`, diffs the design's image urls over the baseline window, and reports only references whose basename the design **no longer uses anywhere**. A url vanishing from one file is not enough — a renamed or deleted design page moves urls around while the image stays in use, so each candidate is confirmed against the design's current state before it is reported. Build output (`dist/`) is excluded, being a stale copy of the same pages.
+
+Exit code `1` means drift was found; `0` means clean.
+
+Each row names the stale basename, the design unit that dropped it, the images added in that same unit (the likely replacements), and every template file + setting id still pointing at it.
+
+**`--audit` vs the default:** the default is precise — only what moved in this sync window. `--audit` compares every template reference against the design's images with no history, so it also surfaces references that were always store-only (merchant-picked, never from the design). Those are legitimate. Use `--audit` to take stock, the default during a sync.
+
+> [!IMPORTANT]
+> **Never rewrite a reference automatically.** Old→new pairing is a judgment call the script deliberately does not make: a unit that dropped one image and added four gives no reliable mapping, and guessing wrong points a live demo at the wrong picture. Propose, let the user choose.
+
+For each drift row offer:
+
+- **Repoint** to the replacement the user names — a one-key text edit in the template, then re-run to confirm the row is gone
+- **Clear it** — leave the picker empty so the merchant picks in the editor
+- **Keep it** — the store image is deliberate and independent of the design
+- **Defer** — record it in the report; nothing changes
+
+Whatever is chosen, the file must still be uploaded to the store the demo ships on, or the reference resolves blank. When the design carries an image handoff contract (`HANDOFF-IMAGES.md` + `.shopify/images.json`), verify the new basename against that manifest and name the store — see the `build-page` skill, which owns the url→picker mapping rules.
 
 ## Step 3 — Build the impact table
 
@@ -113,7 +147,10 @@ Present a single table the user can act on — **only foundation (🔴) + alread
 | 2 | header (modified)              | 🟠 sect | ✅ ported | groups/headers/header/ | Re-sync SCSS/settings | A |
 | 3 | footer (modified)             | 🟠 sect | ✅ ported | groups/footers/footer/ | Re-sync SCSS | A |
 
+| 4 | headphones.png (dropped)      | 🖼 image | template | pages/home/index.preset-2.json | Repoint or clear | A |
+
 _(N net-new sections registered to the PLAN.md backlog in Step 3.5 — listed there, not here; M not-yet-ported-modified units tallied, out of scope.)_
+_Image-drift rows (🖼) come from Step 2.5 and are template edits, NOT `design-to-liquid` re-ports._
 ```
 
 Always include the new design commit subjects (from the engine) above the table — the commit messages are the best summary of intent ("sound stack — 4 new sections + violet palette"). The re-sync table stays focused on foundation + already-ported-modified rows; net-new sections don't become rows here — they feed the backlog write in Step 3.5 instead.
@@ -152,6 +189,8 @@ If the user re-ports just part of the worklist, advance the ledger only if the r
 ## Reference
 
 - `references/ledger-format.md` — the `DESIGN-SYNC.md` table format + bootstrap template.
+- `scripts/image-drift.py` — Step 2.5 template image-drift detector.
+- The `build-page` skill — owns the design-url → `shopify://shop_images/` mapping rules and the per-design image handoff contract.
 
 ## Guardrails
 
@@ -159,3 +198,4 @@ If the user re-ports just part of the worklist, advance the ledger only if the r
 - PROGRESS-mention counts are heuristics — always confirm ported state with the grep/read pass before calling something "✅ ported".
 - If the design repo is shallow or the baseline ref is missing, the engine errors — tell the user to `git -C design fetch` and retry.
 - Foundation changes are the highest leverage: re-mapping one moved token can resolve many downstream "modified" sections at once. Always handle 🔴 before 🟠.
+- **Image-drift rows are the one kind of change this skill resolves in `src/` itself** — a template `image` value is data, not a port, so it never goes through `design-to-liquid`. It is still user-approved per row, and the ledger does not advance until the user confirms the repoints alongside the rest of the batch.
