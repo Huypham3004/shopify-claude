@@ -285,10 +285,17 @@ When the design section is structurally a **group**, NOT a free-standing section
 | D    | **STOP — ask the user** before editing `<name>.liquid` markup or creating a new file       | Markup edits ripple to every theme instance; new file creation breaks the "override" assumption. Sub-brand variants belong in the SAME `.global.scss` via `body.theme-*` cascade, NOT a new folder. | **Never proceed silently.** |
 
 **Why different from the snippet ladder:**
-- Groups have NO numbered variants (`-1`, `-2`) — there is exactly ONE `header.liquid`, ONE `footer.liquid`, etc.
-- Groups ship with rich schemas (header has 41 settings, footer typically 20+) already covering most port needs.
+- Groups have NO numbered variants (`-1`, `-2`) — there is exactly ONE header section and ONE footer section.
+- Groups ship with rich schemas already covering most port needs.
 - Groups are referenced by `{% sections '<group>-group' %}` in `src/layout/theme.liquid` — file-name changes break the layout.
-- Sub-brand `header-pet` / `header-sound` etc. are CSS-cascade overrides, not separate sections.
+
+**Header and footer have their own, more specific ladder.** Each is a single section whose `layout` select
+dispatches to layout snippets (`src/snippets/header-layout/header-<layout>/`,
+`src/snippets/footer-layout/footer-<layout>/`). A design header/footer that differs only in paint is step B;
+one whose structure matches no layout is a new *layout* (asked first), never a new section type — two
+header/footer section types let merchants activate both, which the Theme Store rejects. Sub-brand designs
+(`header-kids`, `footer-parfum`…) map to a layout named by archetype. Full rules: `./header-port.md`,
+`./footer-port.md`.
 
 **Mega menu has its own dispatch architecture** — see `./mega-menu.md`. Adding a mega-menu instance for a new top-level nav link is a `header-group.json` edit (add entry to `sections` map + `order` array with the right `index_nav`), not a markup change.
 

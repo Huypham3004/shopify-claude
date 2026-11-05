@@ -21,9 +21,23 @@ v1 rule set (intentionally small — grow it as new classes of bug surface):
     Fix B: skip the flag — put the comparison straight in `{% if … %}`.
     See the liquid skill: references/gotchas.md #31.
 
-Both Liquid assign shapes are scanned:
-  - tag form:    {% assign x = … %}  /  {%- assign x = … -%}
-  - prelude form: bare `assign x = …` lines inside a {%- liquid … -%} block
+  render-arg-expression
+    `{% render 'x', label: 'a.b' | t %}` / `{% render 'x', lazy: forloop.first
+    == false %}` are HARD Liquid syntax errors ("Expected end_of_string but
+    found pipe / comparison") — the template fails to compile and the
+    storefront shows a red error box. A render/include/content_for argument
+    parses as a single VALUE: a literal, or a variable with property/index
+    access. No filters, comparisons, logic or arithmetic.
+    Fix: resolve the value in the {% liquid %} prelude, pass the variable in.
+    A comparison needs BOTH steps — an if/endif (see rule 1) AND a prelude
+    variable. See the liquid skill: references/gotchas.md #33.
+
+Both Liquid tag shapes are scanned for each rule:
+  - tag form:    {% assign x = … %} / {% render 'x', … %}  (and the -%} forms)
+  - prelude form: bare `assign x = …` / `render 'x', …` lines inside a
+    {%- liquid … -%} block
+Content inside {% comment %}…{% endcomment %} is skipped, so a snippet's
+doc-block @example never trips a rule.
 
 Usage:
   python scripts/validate-liquid.py src/sections/<name>/           # every .liquid under a dir
@@ -122,6 +136,122 @@ def scan_text(text: str) -> list[tuple[int, str, str]]:
     return sorted(hits)
 
 
+# ─── rule: render-arg-expression ──────────────────────────────────────────────
+# A render/include/content_for argument is a VALUE slot, not an expression slot.
+# Anything operator-shaped there is a compile error, so this rule is a hard fail
+# rather than a runtime-behaviour warning like rule 1.
+
+_COMMENT_BLOCK_RE = re.compile(r"\{%-?\s*comment\s*-?%\}.*?\{%-?\s*endcomment\s*-?%\}", re.DOTALL)
+_RAW_BLOCK_RE     = re.compile(r"\{%-?\s*raw\s*-?%\}.*?\{%-?\s*endraw\s*-?%\}", re.DOTALL)
+
+_RENDER_TAG_RE    = re.compile(r"\{%-?\s*(?:render|include|content_for)\s(.*?)-?%\}", re.DOTALL)
+_RENDER_INNER_RE  = re.compile(r"^[ \t]*(?:render|include)\s+(.*)$", re.MULTILINE)
+
+
+def _blank_comments(text: str) -> str:
+    """Replace {% comment %} / {% raw %} bodies with same-length whitespace so
+    line numbers stay truthful while doc-block examples stop matching."""
+    def _keep_newlines(m: re.Match) -> str:
+        return re.sub(r"[^\n]", " ", m.group(0))
+    return _RAW_BLOCK_RE.sub(_keep_newlines, _COMMENT_BLOCK_RE.sub(_keep_newlines, text))
+
+
+def _split_top_level(text: str) -> list[str]:
+    """Split on commas that sit outside quoted strings."""
+    out: list[str] = []
+    buf: list[str] = []
+    quote: str | None = None
+    for ch in text:
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                quote = None
+        elif ch in "\"'":
+            quote = ch
+            buf.append(ch)
+        elif ch == ",":
+            out.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+    out.append("".join(buf))
+    return out
+
+
+def _blank_strings(text: str) -> str:
+    """Whitespace-out string CONTENTS (and their quotes) so an operator-looking
+    character inside a literal never counts — `addition_class: 'bdrs:sm|w'` is a
+    valid xo-css class, not a filter pipe."""
+    out: list[str] = []
+    quote: str | None = None
+    for ch in text:
+        if quote:
+            out.append(" ")
+            if ch == quote:
+                quote = None
+        elif ch in "\"'":
+            quote = ch
+            out.append(" ")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+# Arithmetic requires whitespace on BOTH sides so a negative literal
+# (`offset: -1`) is not mistaken for subtraction.
+_ARG_OFFENDERS = [
+    (re.compile(r"\|"),                                     "a filter pipe"),
+    (re.compile(r"(==|!=|<>|>=|<=|>|<)"),                    "a comparison"),
+    (re.compile(r"(?<![\w.])(?:and|or|contains)(?![\w.])"),  "a logic operator"),
+    (re.compile(r"\s[-+*/]\s"),                             "an arithmetic operator"),
+]
+
+
+def _offending_arg(value: str) -> str | None:
+    clean = _blank_strings(value)
+    for rx, kind in _ARG_OFFENDERS:
+        if rx.search(clean):
+            return kind
+    return None
+
+
+def _scan_arg_list(arglist: str) -> list[tuple[str, str, str]]:
+    """(key, kind, 'key: value') for each offending argument. The first
+    comma-separated segment is the snippet name (plus any `for … as …` /
+    `with … as …` clause) and is never an argument."""
+    found: list[tuple[str, str, str]] = []
+    for seg in _split_top_level(arglist)[1:]:
+        if ":" not in seg:
+            continue
+        key, value = seg.split(":", 1)
+        kind = _offending_arg(value)
+        if kind:
+            found.append((key.strip(), kind, " ".join(seg.split())))
+    return found
+
+
+def scan_render_args(text: str) -> list[tuple[int, str, str, str]]:
+    """(lineno, key, kind, snippet) for each offending render argument."""
+    hits: set[tuple[int, str, str, str]] = set()
+    scan = _blank_comments(text)
+
+    # tag form — {% render 'x', … %}
+    for tag in _RENDER_TAG_RE.finditer(scan):
+        line = _lineno(scan, tag.start())
+        for key, kind, seg in _scan_arg_list(tag.group(1)):
+            hits.add((line, key, kind, seg))
+
+    # prelude form — bare `render 'x', …` inside {%- liquid … -%}
+    for block in _LIQUID_BLOCK_RE.finditer(scan):
+        inner, base = block.group(1), block.start(1)
+        for call in _RENDER_INNER_RE.finditer(inner):
+            line = _lineno(scan, base + call.start())
+            for key, kind, seg in _scan_arg_list(call.group(1)):
+                hits.add((line, key, kind, seg))
+
+    return sorted(hits)
+
+
 # ─── driver ───────────────────────────────────────────────────────────────────
 def gather_targets(target: str | None, do_all: bool) -> list[Path]:
     if do_all:
@@ -161,7 +291,8 @@ def main() -> None:
         print(_color(33, "No .liquid files found at the given target."))
         sys.exit(0)
 
-    total = 0
+    n_assign = 0
+    n_render = 0
     for f in files:
         try:
             text = f.read_text(encoding="utf-8")
@@ -169,24 +300,48 @@ def main() -> None:
             heading(f"─── {f} ───")
             err_line(f"could not read: {e}")
             continue
-        hits = scan_text(text)
-        if not hits:
+
+        assign_hits = scan_text(text)
+        render_hits = scan_render_args(text)
+        if not assign_hits and not render_hits:
             continue
+
         try:
             label = f.relative_to(Path.cwd())
         except ValueError:
             label = f
         heading(f"─── {label} ───")
-        for lineno, op, snippet in hits:
-            total += 1
-            err_line(f"L{lineno}: assign with `{op}` — `assign` takes a value, not a condition.")
-            print(f"      {snippet}")
-            print(f"      fix: branch with if/assign true|false, or put `{op}` straight in {{% if %}}. "
-                  f"(liquid gotchas.md #31)")
+
+        # One merged, line-ordered report per file — reading a file top-to-bottom
+        # beats grouping by rule when the point is "go fix line N".
+        merged = [(l, "assign", (op, snip)) for l, op, snip in assign_hits]
+        merged += [(l, "render", (key, kind, snip)) for l, key, kind, snip in render_hits]
+        for lineno, rule, payload in sorted(merged, key=lambda h: (h[0], h[1])):
+            if rule == "assign":
+                op, snippet = payload
+                n_assign += 1
+                err_line(f"L{lineno}: assign with `{op}` — `assign` takes a value, not a condition.")
+                print(f"      {snippet}")
+                print(f"      fix: branch with if/assign true|false, or put `{op}` straight in {{% if %}}. "
+                      f"(liquid gotchas.md #31)")
+            else:
+                key, kind, snippet = payload
+                n_render += 1
+                err_line(f"L{lineno}: render argument `{key}:` contains {kind} "
+                         f"— an argument takes a bare value. THIS DOES NOT COMPILE.")
+                print(f"      {snippet}")
+                print(f"      fix: resolve it in the {{% liquid %}} prelude, pass the variable in. "
+                      f"(liquid gotchas.md #33)")
 
     print()
+    total = n_assign + n_render
     if total:
-        print(_color(31, f"✗ {total} assign-with-condition error(s) across {len(files)} file(s) scanned"))
+        parts = []
+        if n_assign:
+            parts.append(f"{n_assign} assign-with-condition")
+        if n_render:
+            parts.append(f"{n_render} render-arg-expression")
+        print(_color(31, f"✗ {total} error(s) — {', '.join(parts)} — across {len(files)} file(s) scanned"))
         sys.exit(1)
     print(_color(32, f"✅ No Liquid anti-patterns found ({len(files)} file(s) scanned)"))
 

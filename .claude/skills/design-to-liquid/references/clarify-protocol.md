@@ -50,7 +50,7 @@ Walk these in order. For each, apply the **trigger** rule. If trigger fires, the
 
 | # | Question | Trigger (ask when) | Skip when | Cost if wrong |
 |---|----------|--------------------|-----------|---------------|
-| 1 | **Section name** | **ALWAYS fire** — every port confirms the name before it's committed. Propose names from the feature + layout formula (Q1 detail); when the folder name is already clean, "Keep `<current>`" is simply the recommended option | Never — fire on every section port | **HIGH** — rename touches 5-7 files (section dir, schema id, page preset reference, PLAN row, any `{% section %}` callsite, future imports), so confirming up front is far cheaper than renaming after |
+| 1 | **Section name** (header/footer: **which layout**) | **ALWAYS fire** — every port confirms the name before it's committed. For a header/footer design, ask which `layout` it maps to instead (Q1 detail § header/footer). Propose names from the feature + layout formula (Q1 detail); when the folder name is already clean, "Keep `<current>`" is simply the recommended option | Never — fire on every section port | **HIGH** — rename touches 5-7 files (section dir, schema id, page preset reference, PLAN row, any `{% section %}` callsite, future imports), so confirming up front is far cheaper than renaming after |
 | 2 | **Block strategy** | Design has 2+ repeating units with similar shape | No blocks needed (single-render section), OR shape is so different per unit that hardcoded markup wins | **HIGH** — inline blocks live in section schema, theme blocks live in `src/blocks/<group>/<name>/` with their own schema. Wrong choice = re-author both files. |
 | 3 | **Collection / product data source** | Section displays N collections or N products | No commerce data in this section | **HIGH** — `collection_list` setting (merchant picks N from store, iterate dynamically) vs section blocks (per-block collection picker + per-card override) vs single `collection` picker (1 collection, iterate its products) produce 3 entirely different schema + markup shapes |
 | 4 | **Animation port scope** | Design has scroll-triggered / parallax / per-character motion / IntersectionObserver-driven sequencing | Static design (CSS hover only is not "animation" for this purpose) | **MEDIUM** — animation can be added later as a separate pass, but bundling the effort upfront avoids the 2nd re-survey |
@@ -114,6 +114,29 @@ For each question: the decision shape, what to observe before phrasing, one good
 
 **Anti-example (rigid template):** "Section name: keep `hero-pet` or rename to a feature-generic alternative?"
 *Doesn't show the agent grasped the feature/layout or proposed real names. The user has to do that work.*
+
+#### Q1 for a header or footer — "which layout?" instead of a name
+
+A header/footer port never creates a section, so there is no name to confirm. Q1 still always fires, but it
+asks which **layout** of the single header/footer section the design maps to (see `./header-port.md` §3,
+`./footer-port.md`). Read the current `layout` options in the section's `schema.js` and every layout
+snippet's markup + SCSS first, then compare structure (not paint).
+
+*(Illustrative wording — the layout match must come from your own structure comparison, not from this example.)*
+
+> *Question:* "Design `header-kids` is a two-row header: brand bar on top, numbered column menu below. That's
+> the structure of the existing **Editorial** layout; differences are paint only (rounded sticker logo, kids
+> palette). How should it land?"
+>
+> *Options:*
+> - **Use Editorial + restyle** — set `layout: editorial` in header-group.json, restyle its SCSS (Recommended)
+> - **Use Editorial as-is** — only change settings/defaults, no SCSS
+> - **New layout** — add a `header-<archetype>` layout snippet + option (new markup + settings)
+
+Recommend "New layout" only when no layout shares the design's structure — and say what the new layout
+would reuse. Never offer "new header section" as an option. The design folder may be `header-1`,
+`header-2`, `header-<preset>`, `footer-3`… — quote it so the user knows which design you mean, but derive the
+layout match (and any proposed new layout name) from structure, not from the suffix.
 
 ### Q2 — Block strategy
 

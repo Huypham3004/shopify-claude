@@ -588,7 +588,12 @@ def _validate_block_tree(blocks: dict, parent_schema: dict, ctx: str, cache: dic
     """Recursively validate a preset's block tree against parent's accepted block types."""
     if not isinstance(blocks, dict):
         return
-    accepted_types = {b["type"] for b in (parent_schema.get("blocks") or []) if isinstance(b, dict) and b.get("type")}
+    parent_blocks = [b for b in (parent_schema.get("blocks") or []) if isinstance(b, dict) and b.get("type")]
+    accepted_types = {b["type"] for b in parent_blocks}
+    # Inline section blocks carry their own `settings` array and are scoped to
+    # this parent — they intentionally have NO folder under src/blocks/**.
+    # Resolve them from the parent, never via find_block_dir().
+    inline_blocks = {b["type"]: b for b in parent_blocks if isinstance(b.get("settings"), list)}
 
     for block_id, block in blocks.items():
         if not isinstance(block, dict):
@@ -605,10 +610,22 @@ def _validate_block_tree(blocks: dict, parent_schema: dict, ctx: str, cache: dic
         # Resolve block schema
         if btype.startswith("@"):
             continue  # built-in, skip validation
+        # Inline block — parent owns the schema. NOT cached: `cache` is keyed by
+        # bare type and inline types are parent-scoped, so two sections may each
+        # declare a different `title` block.
+        if btype in inline_blocks:
+            bschema = inline_blocks[btype]
+            bcmap = schema_constraints(bschema)
+            validate_settings_map(block.get("settings", {}), bcmap, f"{ctx}block '{btype}' (inline): ")
+            nested = block.get("blocks", {})
+            if nested:
+                _validate_block_tree(nested, bschema, f"{ctx}{btype} > ", cache)
+            continue
         if btype not in cache:
             d = find_block_dir(btype)
             if not d:
-                err(f"{ctx}block '{btype}': no src/blocks/**/{btype}/ folder")
+                err(f"{ctx}block '{btype}': not declared inline by parent and "
+                    f"no src/blocks/**/{btype}/ folder")
                 cache[btype] = None
                 continue
             bschema, e = node_import(d / "schema.js", "schema")
