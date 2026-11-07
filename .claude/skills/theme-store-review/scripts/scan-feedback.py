@@ -17,6 +17,11 @@ Verdicts:
 Usage:
   python3 scan-feedback.py [theme-root] [--only SF-A11Y-03,SF-ASSET-01] [--json] [--max N]
 
+Also reads ../feedback/R<n>-<date>-<theme>.md (every reviewer round, verbatim, each
+top-level bullet marked `→ SF-<ID>`): prints a per-round coverage table and flags any
+bullet that was never mapped to a ledger ID. Items with a ../fixes/<ID>.md playbook
+are marked in the summary table.
+
 Read-only. Never edits the theme.
 """
 from __future__ import annotations
@@ -528,7 +533,7 @@ def check_inline_links(t: Theme, n: int):
 
 
 DEMO_URL_RE = re.compile(
-    r"['\"](/(?:products|pages)/[\w-]+|/blogs/(?!news['\"/])[\w-]+|/collections/(?!all['\"/])[\w-]+|"
+    r"['\"](/(?:products|pages)/[\w-]+|/blogs/(?!news['\"])[\w-]+(?:/[\w/-]+)?|/collections/(?!all['\"/])[\w-]+|"
     r"shopify://(?:products|collections|blogs|pages)/[\w-]+)")
 
 
@@ -538,9 +543,14 @@ def check_demo_handles(t: Theme, n: int):
         if "node_modules" in str(schema):
             continue
         text = t.read(schema)
+        # Preset settings ship as the section's defaults when a merchant adds it, so a demo
+        # handle there is the same violation as a `default:` (R1 Folio: the Social video
+        # preset blocks carried `/products/...` links while the schema had no default).
+        pm = re.search(r"\bcreatePreset\s*\(|\bpresets\s*:", text)
+        preset_from = pm.start() if pm else len(text)
         for m in DEMO_URL_RE.finditer(text):
             line_start = text.rfind("\n", 0, m.start()) + 1
-            if re.search(r"\bdefault\s*:", text[line_start:m.start()]):
+            if re.search(r"\bdefault\s*:", text[line_start:m.start()]) or m.start() > preset_from:
                 fails.append((schema, line_of(text, m.start()), m.group(1)))
     for j in t.files(t.src, "*.json"):
         if "/locales/" in str(j):
@@ -549,9 +559,13 @@ def check_demo_handles(t: Theme, n: int):
         for m in DEMO_URL_RE.finditer(text):
             if m.group(1).startswith("/") and "collections/all" not in m.group(1):
                 warns.append((j, line_of(text, m.start()), m.group(1)))
-    v = "FAIL" if fails else ("WARN" if warns else "PASS")
-    ev = (["schema defaults (must be blank):"] + fmt(t, fails, n) if fails else []) + \
-         (["shipped template/group JSON (hard-coded store paths):"] + fmt(t, warns, n) if warns else [])
+    # A blank link must not fall back to `#` (a link that goes nowhere). The Theme Store
+    # packager strips `shopify://` references from templates, so blank is the shipped case.
+    hashes = grep(t, t.liquid, re.compile(r"href=\"\{\{[^}]*\|\s*default:\s*'#'"))
+    v = "FAIL" if fails else ("WARN" if warns or hashes else "PASS")
+    ev = (["schema defaults / preset settings (must be blank):"] + fmt(t, fails, n) if fails else []) + \
+         (["shipped template/group JSON (hard-coded store paths):"] + fmt(t, warns, n) if warns else []) + \
+         (["blank link falls back to '#' (render no <a> instead):"] + fmt(t, hashes, n) if hashes else [])
     report("SF-SETTINGS-01", v, "No store-specific handles in setting defaults.", ev)
 
 
@@ -609,6 +623,47 @@ CHECKS = [
 
 ORDER = {"FAIL": 0, "WARN": 1, "MANUAL": 2, "PASS": 3}
 
+SKILL_DIR = Path(__file__).resolve().parent.parent
+ROUND_FILE_RE = re.compile(r"^R(\d+)-(\d{4}-\d{2}-\d{2})-([\w-]+)\.md$")
+ROUND_MARK_RE = re.compile(r"→\s*(SF-[A-Z0-9]+-\d+(?:\s*,\s*SF-[A-Z0-9]+-\d+)*)\s*$")
+
+
+def load_rounds() -> tuple[list[dict], list[str]]:
+    """Read every feedback/R<n>-<date>-<theme>.md. Each top-level bullet must end with
+    `→ SF-<ID>[, SF-<ID>]`. Returns (rounds, problems)."""
+    rounds, problems = [], []
+    known = {sid for sid, _ in CHECKS}
+    fdir = SKILL_DIR / "feedback"
+    if not fdir.is_dir():
+        return rounds, [f"{fdir} missing — no reviewer rounds recorded"]
+    for f in sorted(fdir.glob("R[0-9]*.md"), key=lambda p: int(ROUND_FILE_RE.match(p.name).group(1)) if ROUND_FILE_RE.match(p.name) else 0):
+        fm = ROUND_FILE_RE.match(f.name)
+        if not fm:
+            problems.append(f"feedback/{f.name}: name must be R<n>-<YYYY-MM-DD>-<theme>.md")
+            continue
+        ids, unmapped, bullets = [], [], 0
+        for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            if not line.startswith("- "):
+                continue
+            bullets += 1
+            m = ROUND_MARK_RE.search(line)
+            if not m:
+                unmapped.append(f"feedback/{f.name}:{i}  {line[2:70]}…")
+                continue
+            for sid in re.split(r"\s*,\s*", m.group(1)):
+                if sid not in known:
+                    problems.append(f"feedback/{f.name}:{i}  {sid} is not a ledger/scanner ID")
+                if sid not in ids:
+                    ids.append(sid)
+        problems += [f"not ingested (no → SF-ID): {u}" for u in unmapped]
+        rounds.append({"round": f"R{fm.group(1)}", "date": fm.group(2), "theme": fm.group(3),
+                       "file": f.name, "bullets": bullets, "unmapped": len(unmapped), "ids": ids})
+    return rounds, problems
+
+
+def has_playbook(sid: str) -> bool:
+    return (SKILL_DIR / "fixes" / f"{sid}.md").exists()
+
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -632,26 +687,56 @@ def main() -> int:
         except Exception as e:  # a broken heuristic must not hide the other results
             report(sid, "MANUAL", f"scanner error: {e!r} — check by hand")
 
+    rounds, round_problems = load_rounds()
+    by_id = {r["id"]: r["verdict"] for r in RESULTS}
+    for r in RESULTS:
+        r["playbook"] = f"fixes/{r['id']}.md" if has_playbook(r["id"]) else None
+    for rd in rounds:
+        rd["verdicts"] = {sid: by_id.get(sid, "not run") for sid in rd["ids"]}
+
     if a.json:
-        print(json.dumps({"root": str(root), "results": RESULTS}, indent=2, ensure_ascii=False))
-        return 0
+        print(json.dumps({"root": str(root), "results": RESULTS, "rounds": rounds,
+                          "round_problems": round_problems}, indent=2, ensure_ascii=False))
+        return 1 if any(r["verdict"] == "FAIL" for r in RESULTS) or round_problems else 0
 
     counts = defaultdict(int)
     for r in RESULTS:
         counts[r["verdict"]] += 1
     print(f"# Theme Store pre-submit scan — {root.name}\n")
     print(" · ".join(f"{k} {counts[k]}" for k in ("FAIL", "WARN", "MANUAL", "PASS")) + "\n")
-    print("| ID | Verdict | Summary |\n|---|---|---|")
-    for r in sorted(RESULTS, key=lambda r: (ORDER[r["verdict"]], r["id"])):
-        print(f"| {r['id']} | {r['verdict']} | {r['summary']} |")
+    seen = defaultdict(list)
+    for rd in rounds:
+        for sid in rd["ids"]:
+            seen[sid].append(rd["round"])
+    print("| ID | Verdict | Rounds | Playbook | Summary |\n|---|---|---|---|---|")
+    for r in sorted(RESULTS, key=lambda r: (ORDER[r["verdict"]], -len(seen[r["id"]]), r["id"])):
+        print(f"| {r['id']} | {r['verdict']} | {' '.join(seen[r['id']]) or '—'} | "
+              f"{'yes' if r['playbook'] else '—'} | {r['summary']} |")
     print()
+
+    print(f"## Reviewer rounds — all re-checked on {root.name}\n")
+    if rounds:
+        print("Every round applies to every theme; *Raised on* is only where it came from.\n")
+        print("| Round | Raised on | Received | Bullets | Items | FAIL | WARN | MANUAL | PASS |\n|---|---|---|---|---|---|---|---|---|")
+        for rd in rounds:
+            c = defaultdict(int)
+            for v in rd["verdicts"].values():
+                c[v] += 1
+            print(f"| {rd['round']} | {rd['theme']} | {rd['date']} | {rd['bullets']} | {len(rd['ids'])} | "
+                  f"{c['FAIL']} | {c['WARN']} | {c['MANUAL']} | {c['PASS']} |")
+        print()
+    if round_problems:
+        print("**ROUNDS ✗ — fix before trusting this report (run INGEST):**")
+        for p_ in round_problems:
+            print(f"- {p_}")
+        print()
     for r in sorted(RESULTS, key=lambda r: (ORDER[r["verdict"]], r["id"])):
         if r["evidence"]:
             print(f"## {r['id']} — {r['verdict']}")
             for e in r["evidence"]:
                 print(f"- {e}")
             print()
-    return 1 if counts["FAIL"] else 0
+    return 1 if counts["FAIL"] or round_problems else 0
 
 
 if __name__ == "__main__":
